@@ -67,7 +67,7 @@ When you need to put some foo on the bar.
       EOS
 
       doc = Asciidoctor.load input, :backend => :manpage, :header_footer => true
-      assert_equal 'puts some foo on the bar', (doc.attr 'manpurpose') 
+      assert_equal 'puts some foo on the bar', (doc.attr 'manpurpose')
     end
 
     test 'should define default linkstyle' do
@@ -281,6 +281,14 @@ mailto:doc@example.org[Contact the doc])
 First paragraph.
 .sp
 .MTO "doc\\(atexample.org" "Contact the doc" ""', output.lines.entries[-4..-1].join
+    end
+
+    test 'should set text of MTO macro to blank for implicit email' do
+      input = %(#{SAMPLE_MANPAGE_HEADER}
+Bugs fixed daily by doc@example.org.)
+      output = Asciidoctor.convert input, :backend => :manpage
+      assert output.end_with? 'Bugs fixed daily by \\c
+.MTO "doc\\(atexample.org" "" "."'
     end
   end
 

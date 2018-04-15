@@ -235,11 +235,13 @@ content
 content
       EOS
 
-      doc, warnings = redirect_streams {|_, err| [(document_from_string input), err.string]}
-      reftext = doc.catalog[:ids]['install']
-      refute_nil reftext
-      assert_equal 'First Install', reftext
-      assert_includes warnings, 'line 7: id assigned to section already in use: install'
+      using_memory_logger do |logger|
+        doc = document_from_string input
+        reftext = doc.catalog[:ids]['install']
+        refute_nil reftext
+        assert_equal 'First Install', reftext
+        assert_message logger, :WARN, '<stdin>: line 7: id assigned to section already in use: install', Hash
+      end
     end
 
     test 'duplicate block id should not overwrite existing section id entry in references table' do
@@ -253,11 +255,13 @@ content
 content
       EOS
 
-      doc, warnings = redirect_streams {|_, err| [(document_from_string input), err.string] }
-      reftext = doc.catalog[:ids]['install']
-      refute_nil reftext
-      assert_equal 'First Install', reftext
-      assert_includes warnings, 'line 7: id assigned to block already in use: install'
+      using_memory_logger do |logger|
+        doc = document_from_string input
+        reftext = doc.catalog[:ids]['install']
+        refute_nil reftext
+        assert_equal 'First Install', reftext
+        assert_message logger, :WARN, '<stdin>: line 7: id assigned to block already in use: install', Hash
+      end
     end
   end
 
@@ -862,14 +866,10 @@ text in standalone
 // end simulated include::[]
       EOS
 
-      warnings = nil
-      redirect_streams do |out, err|
+      using_memory_logger do |logger|
         render_string input
-        warnings = err.string
+        assert_message logger, :ERROR, '<stdin>: line 7: level 0 sections can only be used when doctype is book', Hash
       end
-
-      refute_empty warnings
-      assert_match(/only book doctypes can contain level 0 sections/, warnings)
     end
 
     test 'should add level offset to section level' do
@@ -899,13 +899,12 @@ Standalone section text.
 Master section text.
       EOS
 
-      output = warnings = nil
-      redirect_streams do |out, err|
+      output = nil
+      using_memory_logger do |logger|
         output = render_string input
-        warnings = err.string
+        assert logger.empty?
       end
 
-      assert_empty warnings
       assert_match(/Master document written by Doc Writer/, output)
       assert_match(/Standalone document written by Junior Writer/, output)
       assert_xpath '//*[@class="sect1"]/h2[text() = "Standalone Document"]', output, 1
@@ -1771,6 +1770,93 @@ Terms
       assert_xpath '//*[@id="toc"]/ul//li/a[text()="Glossary"]', output, 1
     end
 
+    test 'should number special sections and their subsections when sectnums is all' do
+      input = <<-EOS
+:sectnums: all
+
+[dedication]
+== Dedication
+
+=== Dedication Subsection
+
+content
+
+== Section One
+
+[appendix]
+== Attribute Options
+
+Details
+
+[appendix]
+== Migration
+
+Details
+
+=== Gotchas
+
+Details
+
+[glossary]
+== Glossary
+
+Terms
+      EOS
+
+      output = render_embedded_string input
+      assert_xpath '(//h2)[1][text()="1. Dedication"]', output, 1
+      assert_xpath '(//h3)[1][text()="1.1. Dedication Subsection"]', output, 1
+      assert_xpath '(//h2)[2][text()="2. Section One"]', output, 1
+      assert_xpath '(//h2)[3][text()="Appendix A: Attribute Options"]', output, 1
+      assert_xpath '(//h2)[4][text()="Appendix B: Migration"]', output, 1
+      assert_xpath '(//h3)[2][text()="B.1. Gotchas"]', output, 1
+      assert_xpath '(//h2)[5][text()="3. Glossary"]', output, 1
+    end
+
+    test 'should number special sections and their subsections in toc when sectnums is all' do
+      input = <<-EOS
+:sectnums: all
+:toc:
+
+[dedication]
+== Dedication
+
+=== Dedication Subsection
+
+content
+
+== Section One
+
+[appendix]
+== Attribute Options
+
+Details
+
+[appendix]
+== Migration
+
+Details
+
+=== Gotchas
+
+Details
+
+[glossary]
+== Glossary
+
+Terms
+      EOS
+
+      output = render_string input
+      assert_xpath '//*[@id="toc"]/ul//li/a[text()="1. Dedication"]', output, 1
+      assert_xpath '//*[@id="toc"]/ul//li/a[text()="1.1. Dedication Subsection"]', output, 1
+      assert_xpath '//*[@id="toc"]/ul//li/a[text()="2. Section One"]', output, 1
+      assert_xpath '//*[@id="toc"]/ul//li/a[text()="Appendix A: Attribute Options"]', output, 1
+      assert_xpath '//*[@id="toc"]/ul//li/a[text()="Appendix B: Migration"]', output, 1
+      assert_xpath '//*[@id="toc"]/ul//li/a[text()="B.1. Gotchas"]', output, 1
+      assert_xpath '//*[@id="toc"]/ul//li/a[text()="3. Glossary"]', output, 1
+    end
+
     test 'level 0 special sections in multipart book should be rendered as level 1' do
       input = <<-EOS
 = Multipart Book
@@ -1944,6 +2030,19 @@ The corresponding definition.
       assert_xpath '//chapter/glossary', output, 1
       assert_xpath '//glossary/title[text()="Glossary A"]', output, 1
       assert_xpath '//glossary/glossentry', output, 2
+    end
+
+    test 'should drop title on special section in DocBook output if untitled option is set' do
+      input = <<-EOS
+[dedication%untitled]
+== Dedication
+
+content
+      EOS
+
+      output = render_embedded_string input, :backend => :docbook
+      assert_xpath '/dedication', output, 1
+      assert_xpath '/dedication/title', output, 0
     end
   end
 
@@ -2848,15 +2947,10 @@ more part intro
 intro
       EOS
 
-      warnings = nil
-      redirect_streams do |out, err|
+      using_memory_logger do |logger|
         document_from_string input
-        warnings = err.string
+        assert_message logger, :ERROR, '<stdin>: line 8: invalid part, must have at least one section (e.g., chapter, appendix, etc.)', Hash
       end
-
-      refute_nil warnings
-      refute_empty warnings
-      assert_match(/ERROR:.*section/, warnings)
     end
 
     test 'should create parts and chapters in docbook backend' do
@@ -2937,12 +3031,11 @@ Appendix content
 Appendix subsection content
       EOS
 
-      output = warnings = nil
-      redirect_streams do |out, err|
+      output = nil
+      using_memory_logger do |logger|
         output = render_string input, :backend => 'docbook'
-        warnings = err.string
+        assert logger.empty?
       end
-      assert_empty warnings
       assert_xpath '/book/preface', output, 1
       assert_xpath '/book/preface/section', output, 1
       assert_xpath '/book/part', output, 1

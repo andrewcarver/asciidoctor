@@ -22,6 +22,8 @@ end
 # ideally we should use require_relative instead of modifying the LOAD_PATH
 $:.unshift File.dirname __FILE__
 
+require 'asciidoctor/logging'
+
 # Public: Methods for parsing AsciiDoc input files and converting documents
 # using eRuby templates.
 #
@@ -871,11 +873,13 @@ module Asciidoctor
     # Matches an inline footnote macro, which is allowed to span multiple lines.
     #
     # Examples
-    #   footnote:[text]
-    #   footnoteref:[id,text]
-    #   footnoteref:[id]
+    #   footnote:[text] (not referenceable)
+    #   footnote:id[text] (referenceable)
+    #   footnote:id[] (reference)
+    #   footnoteref:[id,text] (legacy)
+    #   footnoteref:[id] (legacy)
     #
-    InlineFootnoteMacroRx = /\\?(footnote(?:ref)?):\[(#{CC_ALL}*?[^\\])\]/m
+    InlineFootnoteMacroRx = /\\?footnote(?:(ref):|:([\w\-]+)?)\[(?:|(#{CC_ALL}*?[^\\]))\]/m
 
     # Matches an image or icon inline macro.
     #
@@ -1292,6 +1296,10 @@ module Asciidoctor
       timings.start :read
     end
 
+    if (logger = options[:logger]) && logger != LoggerManager.logger
+      LoggerManager.logger = logger
+    end
+
     if !(attrs = options[:attributes])
       attrs = {}
     elsif ::Hash === attrs || (::RUBY_ENGINE_JRUBY && ::Java::JavaUtil::Map === attrs)
@@ -1478,7 +1486,7 @@ module Asciidoctor
         raise ::IOError, %(input file and output file cannot be the same: #{outfile})
       end
     elsif write_to_target # write to explicit file or directory
-      working_dir = (options.key? :base_dir) ? (::File.expand_path options[:base_dir]) : (::File.expand_path ::Dir.pwd)
+      working_dir = (options.key? :base_dir) ? (::File.expand_path options[:base_dir]) : ::Dir.pwd
       # QUESTION should the jail be the working_dir or doc.base_dir???
       jail = doc.safe >= SafeMode::SAFE ? working_dir : nil
       if to_dir

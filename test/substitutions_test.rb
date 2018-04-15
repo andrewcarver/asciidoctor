@@ -837,12 +837,11 @@ context 'Substitutions' do
 == image:{iconsdir}/dot.gif[dot] Title
       EOS
 
-      sect, warnings = redirect_streams do |_, err|
-        [(block_from_string input, :attributes => { 'data-uri' => '', 'iconsdir' => 'fixtures', 'docdir' => testdir }, :safe => :server, :catalog_assets => true), err.string]
+      using_memory_logger do |logger|
+        sect = block_from_string input, :attributes => { 'data-uri' => '', 'iconsdir' => 'fixtures', 'docdir' => testdir }, :safe => :server, :catalog_assets => true
+        assert_includes sect.document.catalog[:images], 'fixtures/dot.gif'
+        assert logger.empty?
       end
-      assert_includes sect.document.catalog[:images], 'fixtures/dot.gif'
-      refute_nil warnings
-      assert_empty warnings
     end
 
     test 'an icon macro should be interpreted as an icon if icons are enabled' do
@@ -1022,6 +1021,46 @@ foofootnote:[+http://example.com+]barfootnote:[+http://acme.com+]baz
     test 'an unresolved footnoteref should not crash the processor' do
       para = block_from_string('Sentence text footnoteref:[ex1].')
       para.sub_macros para.source
+    end
+
+    test 'inline footnote macro can be used to define and reference a footnote reference' do
+      input = <<-EOS
+You can download the software from the product page.footnote:sub[Option only available if you have an active subscription.]
+
+You can also file a support request.footnote:sub[]
+
+If all else fails, you can give us a call.footnoteref:[sub]
+      EOS
+
+      output = render_embedded_string input
+      assert_css '#_footnote_1', output, 1
+      assert_css 'p a[href="#_footnote_1"]', output, 3
+      assert_css '#footnotes .footnote', output, 1
+    end
+
+    test 'should parse multiple footnote references in a single line' do
+      input = <<-'EOS'
+notable text.footnote:id[about this [text\]], footnote:id[], footnote:id[]
+      EOS
+
+      output = render_embedded_string input
+      assert_xpath '(//p)[1]/sup[starts-with(@class,"footnote")]', output, 3
+      assert_xpath '(//p)[1]/sup[@class="footnote"]', output, 1
+      assert_xpath '(//p)[1]/sup[@class="footnoteref"]', output, 2
+      assert_xpath '(//p)[1]/sup[starts-with(@class,"footnote")]/a[@class="footnote"][text()="1"]', output, 3
+      assert_css '#footnotes .footnote', output, 1
+    end
+
+    test 'should not resolve an inline footnote macro missing both id and text' do
+      input = <<-EOS
+The footnote:[] macro can be used for defining and referencing footnotes.
+
+The footnoteref:[] macro is now deprecated.
+      EOS
+
+      output = render_embedded_string input
+      assert_includes output, 'The footnote:[] macro'
+      assert_includes output, 'The footnoteref:[] macro'
     end
 
     test 'a single-line index term macro with a primary term should be registered as an index reference' do
@@ -1622,6 +1661,7 @@ EOS
         input = 'asciimath:[a < b]'
         para = block_from_string input, :backend => :docbook
         assert_equal '<inlineequation><mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mi>a</mml:mi><mml:mo>&#x003C;</mml:mo><mml:mi>b</mml:mi></mml:math></inlineequation>', para.content
+        assert_equal :loaded, para.document.converter.instance_variable_get(:@asciimath)
       end
 
       test 'should honor explicit subslist on asciimath macro' do

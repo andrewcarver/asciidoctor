@@ -131,7 +131,7 @@ module Substitutors
       when :post_replacements
         text = sub_post_replacements text
       else
-        warn %(asciidoctor: WARNING: unknown substitution type #{type})
+        logger.warn %(unknown substitution type #{type})
       end
     end
     text = restore_passthroughs text if has_passthroughs
@@ -509,11 +509,11 @@ module Substitutors
             reject_if_empty = true
             ''
           when 'drop-line'
-            warn %(asciidoctor: WARNING: dropping line containing reference to missing attribute: #{key})
+            logger.warn %(dropping line containing reference to missing attribute: #{key})
             reject = true
             break ''
           when 'warn'
-            warn %(asciidoctor: WARNING: skipping reference to missing attribute: #{key})
+            logger.warn %(skipping reference to missing attribute: #{key})
             $&
           else # 'skip'
             $&
@@ -682,7 +682,7 @@ module Substitutors
       }
     end
 
-    if ((result.include? '((') && (result.include? '))')) || (found_macroish_short && (result.include? 'indexterm'))
+    if ((result.include? '((') && (result.include? '))')) || (found_macroish_short && (result.include? 'dexterm'))
       # (((Tigers,Big cats)))
       # indexterm:[Tigers,Big cats]
       # ((Tigers))
@@ -927,7 +927,7 @@ module Substitutors
       }
     end
 
-    if found_macroish_short && (result.include? 'footnote')
+    if found_macroish && (result.include? 'tnote')
       result = result.gsub(InlineFootnoteMacroRx) {
         # alias match for Ruby 1.8.7 compat
         m = $~
@@ -935,36 +935,34 @@ module Substitutors
         if m[0].start_with? RS
           next m[0][1..-1]
         end
-        if m[1] == 'footnote'
-          id = nil
-          # REVIEW it's a dirty job, but somebody's gotta do it
-          text = restore_passthroughs(sub_inline_xrefs(sub_inline_anchors(normalize_string m[2], true)), false)
-          index = @document.counter('footnote-number')
-          @document.register(:footnotes, Document::Footnote.new(index, id, text))
-          type = nil
-          target = nil
+        if m[1] # footnoteref (legacy)
+          id, text = (m[3] || '').split(',', 2)
         else
-          id, text = m[2].split(',', 2)
-          id = id.strip
+          id, text = m[2], m[3]
+        end
+        if id
           if text
             # REVIEW it's a dirty job, but somebody's gotta do it
             text = restore_passthroughs(sub_inline_xrefs(sub_inline_anchors(normalize_string text, true)), false)
             index = @document.counter('footnote-number')
             @document.register(:footnotes, Document::Footnote.new(index, id, text))
-            type = :ref
-            target = nil
+            type, target = :ref, nil
           else
-            if (footnote = @document.footnotes.find {|fn| fn.id == id })
-              index = footnote.index
-              text = footnote.text
+            if (footnote = @document.footnotes.find {|candidate| candidate.id == id })
+              index, text = footnote.index, footnote.text
             else
-              index = nil
-              text = id
+              index, text = nil, id
             end
-            target = id
-            id = nil
-            type = :xref
+            type, target, id = :xref, id, nil
           end
+        elsif text
+          # REVIEW it's a dirty job, but somebody's gotta do it
+          text = restore_passthroughs(sub_inline_xrefs(sub_inline_anchors(normalize_string text, true)), false)
+          index = @document.counter('footnote-number')
+          @document.register(:footnotes, Document::Footnote.new(index, id, text))
+          type = target = nil
+        else
+          next m[0]
         end
         Inline.new(self, :footnote, text, :attributes => {'index' => index}, :id => id, :target => target, :type => type).convert
       }
@@ -1053,8 +1051,8 @@ module Substitutors
           if @document.attributes['docname'] == path || @document.catalog[:includes].include?(path)
             if fragment
               refid, path, target = fragment, nil, %(##{fragment})
-              if $VERBOSE
-                warn %(asciidoctor: WARNING: invalid reference: #{fragment}) unless @document.catalog[:ids].key? fragment
+              if logger.debug?
+                logger.warn %(invalid reference: #{fragment}) unless @document.catalog[:ids].key? fragment
               end
             else
               refid, path, target = nil, nil, '#'
@@ -1072,8 +1070,8 @@ module Substitutors
                 ((fragment.include? ' ') || fragment.downcase != fragment) &&
                 (resolved_id = @document.catalog[:ids].key fragment)
               fragment = resolved_id
-            elsif $VERBOSE
-              warn %(asciidoctor: WARNING: invalid reference: #{fragment})
+            elsif logger.debug?
+              logger.warn %(invalid reference: #{fragment})
             end
           end
           refid, target = fragment, %(##{fragment})
@@ -1341,7 +1339,7 @@ module Substitutors
     resolved = candidates & SUB_OPTIONS[type]
     unless (candidates - resolved).empty?
       invalid = candidates - resolved
-      warn %(asciidoctor: WARNING: invalid substitution type#{invalid.size > 1 ? 's' : ''}#{subject ? ' for ' : nil}#{subject}: #{invalid * ', '})
+      logger.warn %(invalid substitution type#{invalid.size > 1 ? 's' : ''}#{subject ? ' for ' : ''}#{subject}: #{invalid * ', '})
     end
     resolved
   end
