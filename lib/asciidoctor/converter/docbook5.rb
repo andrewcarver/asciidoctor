@@ -4,6 +4,7 @@ module Asciidoctor
   # similar to the docbook45 backend from AsciiDoc Python, but migrated to the
   # DocBook 5 specification.
   class Converter::DocBook5Converter < Converter::BuiltIn
+    CopyrightRx = /^(.+?)(?: ((?:\d{4}\-)?\d{4}))?$/
     ImageMacroRx = /^image::?(.+?)\[(.*?)\]$/
 
     def document node
@@ -321,7 +322,24 @@ module Asciidoctor
 </partintro>)
         end
       else
-        resolve_content node
+        reftext = node.reftext if (id = node.id)
+        role = node.role
+        if node.title?
+          %(<formalpara#{common_attributes id, role, reftext}>
+<title>#{node.title}</title>
+<para>#{content_spacer = node.content_model == :compound ? LF : ''}#{node.content}#{content_spacer}</para>
+</formalpara>)
+        elsif id || role
+          if node.content_model == :compound
+            %(<para#{common_attributes id, role, reftext}>
+#{node.content}
+</para>)
+          else
+            %(<simpara#{common_attributes id, role, reftext}>#{node.content}</simpara>)
+          end
+        else
+          resolve_content node
+        end
       end
     end
 
@@ -370,7 +388,10 @@ module Asciidoctor
       has_body = false
       result = []
       pgwide_attribute = (node.option? 'pgwide') ? ' pgwide="1"' : ''
-      result << %(<#{tag_name = node.title? ? 'table' : 'informaltable'}#{common_attributes node.id, node.role, node.reftext}#{pgwide_attribute} frame="#{node.attr 'frame', 'all'}" rowsep="#{['none', 'cols'].include?(node.attr 'grid') ? 0 : 1}" colsep="#{['none', 'rows'].include?(node.attr 'grid') ? 0 : 1}"#{(node.attr? 'orientation', 'landscape', false) ? ' orient="land"' : ''}>)
+      if (frame = node.attr 'frame', 'all') == 'ends'
+        frame = 'topbot'
+      end
+      result << %(<#{tag_name = node.title? ? 'table' : 'informaltable'}#{common_attributes node.id, node.role, node.reftext}#{pgwide_attribute} frame="#{frame}" rowsep="#{['none', 'cols'].include?(node.attr 'grid') ? 0 : 1}" colsep="#{['none', 'rows'].include?(node.attr 'grid') ? 0 : 1}"#{(node.attr? 'orientation', 'landscape', false) ? ' orient="land"' : ''}>)
       if (node.option? 'unbreakable')
         result << '<?dbfo keep-together="always"?>'
       elsif (node.option? 'breakable')
@@ -654,6 +675,13 @@ module Asciidoctor
       result << document_title_tags(doc.doctitle :partition => true, :use_fallback => true) unless doc.notitle
       if (date = (doc.attr? 'revdate') ? (doc.attr 'revdate') : ((doc.attr? 'reproducible') ? nil : (doc.attr 'docdate')))
         result << %(<date>#{date}</date>)
+      end
+      if doc.attr? 'copyright'
+        CopyrightRx =~ (doc.attr 'copyright')
+        result << '<copyright>'
+        result << %(<holder>#{$1}</holder>)
+        result << %(<year>#{$2}</year>) if $2
+        result << '</copyright>'
       end
       if doc.has_header?
         if doc.attr? 'author'

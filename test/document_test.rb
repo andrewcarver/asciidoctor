@@ -955,6 +955,46 @@ content
       assert_xpath '(//articleinfo/authorgroup/author)[2]/email[text() = "junior@asciidoc.org"]', output, 1
     end
 
+    test 'should populate copyright element in DocBook output if copyright attribute is defined' do
+      input = <<-EOS
+= Jet Bike
+:copyright: ACME, Inc.
+
+Essential for catching road runners.
+      EOS
+      output = render_string input, :backend => 'docbook5'
+      assert_xpath '/article/info/copyright', output, 1
+      assert_xpath '/article/info/copyright/holder[text()="ACME, Inc."]', output, 1
+    end
+
+    test 'should populate copyright element in DocBook output if copyright attribute is defined with year' do
+      input = <<-EOS
+= Jet Bike
+:copyright: ACME, Inc. 1956
+
+Essential for catching road runners.
+      EOS
+      output = render_string input, :backend => 'docbook5'
+      assert_xpath '/article/info/copyright', output, 1
+      assert_xpath '/article/info/copyright/holder[text()="ACME, Inc."]', output, 1
+      assert_xpath '/article/info/copyright/year', output, 1
+      assert_xpath '/article/info/copyright/year[text()="1956"]', output, 1
+    end
+
+    test 'should populate copyright element in DocBook output if copyright attribute is defined with year range' do
+      input = <<-EOS
+= Jet Bike
+:copyright: ACME, Inc. 1956-2018
+
+Essential for catching road runners.
+      EOS
+      output = render_string input, :backend => 'docbook5'
+      assert_xpath '/article/info/copyright', output, 1
+      assert_xpath '/article/info/copyright/holder[text()="ACME, Inc."]', output, 1
+      assert_xpath '/article/info/copyright/year', output, 1
+      assert_xpath '/article/info/copyright/year[text()="1956-2018"]', output, 1
+    end
+
     test 'with header footer' do
       doc = document_from_string "= Title\n\nparagraph"
       refute doc.attr?('embedded')
@@ -1056,13 +1096,13 @@ finally a reference to the second footnote footnoteref:[note2].
       output = render_string input
       assert_css '#footnotes', output, 1
       assert_css '#footnotes .footnote', output, 2
-      assert_css '#footnotes .footnote#_footnote_1', output, 1
-      assert_xpath '//div[@id="footnotes"]/div[@id="_footnote_1"]/a[@href="#_footnoteref_1"][text()="1"]', output, 1
-      text = xmlnodes_at_xpath '//div[@id="footnotes"]/div[@id="_footnote_1"]/text()', output
+      assert_css '#footnotes .footnote#_footnotedef_1', output, 1
+      assert_xpath '//div[@id="footnotes"]/div[@id="_footnotedef_1"]/a[@href="#_footnoteref_1"][text()="1"]', output, 1
+      text = xmlnodes_at_xpath '//div[@id="footnotes"]/div[@id="_footnotedef_1"]/text()', output
       assert_equal '. An example footnote.', text.text.strip
-      assert_css '#footnotes .footnote#_footnote_2', output, 1
-      assert_xpath '//div[@id="footnotes"]/div[@id="_footnote_2"]/a[@href="#_footnoteref_2"][text()="2"]', output, 1
-      text = xmlnodes_at_xpath '//div[@id="footnotes"]/div[@id="_footnote_2"]/text()', output
+      assert_css '#footnotes .footnote#_footnotedef_2', output, 1
+      assert_xpath '//div[@id="footnotes"]/div[@id="_footnotedef_2"]/a[@href="#_footnoteref_2"][text()="2"]', output, 1
+      text = xmlnodes_at_xpath '//div[@id="footnotes"]/div[@id="_footnotedef_2"]/text()', output
       assert_equal '. Second footnote.', text.text.strip
     end
 
@@ -1074,9 +1114,9 @@ Text that has supporting information{empty}footnote:[An example footnote.].
       output = render_embedded_string input
       assert_css '#footnotes', output, 1
       assert_css '#footnotes .footnote', output, 1
-      assert_css '#footnotes .footnote#_footnote_1', output, 1
-      assert_xpath '/div[@id="footnotes"]/div[@id="_footnote_1"]/a[@href="#_footnoteref_1"][text()="1"]', output, 1
-      text = xmlnodes_at_xpath '/div[@id="footnotes"]/div[@id="_footnote_1"]/text()', output
+      assert_css '#footnotes .footnote#_footnotedef_1', output, 1
+      assert_xpath '/div[@id="footnotes"]/div[@id="_footnotedef_1"]/a[@href="#_footnoteref_1"][text()="1"]', output, 1
+      text = xmlnodes_at_xpath '/div[@id="footnotes"]/div[@id="_footnotedef_1"]/text()', output
       assert_equal '. An example footnote.', text.text.strip
     end
 
@@ -1208,6 +1248,7 @@ content
 Author Name
 v1.0, 2001-01-01
 :icons:
+:favicon:
 
 image:tiger.png[]
 
@@ -1615,7 +1656,7 @@ asciidoctor - converts AsciiDoc source files to HTML, DocBook and other formats
       input = <<-EOS
 = {app}(1)
 :doctype: manpage
-:app: asciidoctor
+:app: Asciidoctor
 
 == NAME
 
@@ -1737,13 +1778,13 @@ asciidoctor - converts AsciiDoc source files to HTML, DocBook and other formats
 
     test 'keeps naughty absolute paths from getting outside' do
       naughty_path = "#{disk_root}etc/passwd"
-      doc = empty_document
-      secure_path, warnings = redirect_streams do |_, err|
-        [(doc.normalize_asset_path naughty_path), err.string]
+      using_memory_logger do |logger|
+        doc = empty_document
+        secure_path = doc.normalize_asset_path naughty_path
+        refute_equal naughty_path, secure_path
+        assert_equal (::File.join doc.base_dir, 'etc/passwd'), secure_path
+        assert_message logger, :WARN, 'path is outside of jail; recovering automatically'
       end
-      refute_equal naughty_path, secure_path
-      assert_equal (::File.join doc.base_dir, 'etc/passwd'), secure_path
-      assert_includes warnings, 'path is outside of jail'
     end
 
     test 'keeps naughty relative paths from getting outside' do

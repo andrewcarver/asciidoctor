@@ -675,6 +675,28 @@ Line 2: {set:a!}This line should appear in the output.
       refute_match(/\{set:a!\}/, output)
     end
 
+    test 'should drop line that only contains attribute assignment' do
+      input = <<-EOS
+Line 1
+{set:a}
+Line 2
+      EOS
+
+      output = render_embedded_string input
+      assert_xpath %(//p[text()="Line 1\nLine 2"]), output, 1
+    end
+
+    test 'should drop line that only contains unresolved attribute when attribute-missing is drop' do
+      input = <<-EOS
+Line 1
+{unresolved}
+Line 2
+      EOS
+
+      output = render_embedded_string input, :attributes => { 'attribute-missing' => 'drop' }
+      assert_xpath %(//p[text()="Line 1\nLine 2"]), output, 1
+    end
+
     test "substitutes inside unordered list items" do
       html = render_string(":foo: bar\n* snort at the {foo}\n* yawn")
       result = Nokogiri::HTML(html)
@@ -749,6 +771,20 @@ v1.0, 2010-01-01: First release!
       output = doc.convert
       assert_includes output, 'value == value'
       assert_includes output, '2010-01-01 == 2010-01-01'
+    end
+
+    test 'should warn if unterminated block comment is detected in document header' do
+      input = <<-EOS
+= Document Title
+:foo: bar
+////
+:hey: there
+
+content
+      EOS
+      doc = document_from_string input
+      assert_nil doc.attr('hey')
+      assert_message @logger, :WARN, '<stdin>: line 3: unterminated comment block', Hash
     end
 
     test 'substitutes inside block title' do
@@ -1276,11 +1312,29 @@ A paragraph
 
     test 'id, role and options attributes can be specified on block style using shorthand syntax' do
       input = <<-EOS
-[normal#first.lead%step]
-A normal paragraph.
+[literal#first.lead%step]
+A literal paragraph.
       EOS
       doc = document_from_string(input)
       para = doc.blocks.first
+      assert_equal :literal, para.context
+      assert_equal 'first', para.attributes['id']
+      assert_equal 'lead', para.attributes['role']
+      assert_equal 'step', para.attributes['options']
+      assert para.attributes.has_key?('step-option')
+    end
+
+    test 'id, role and options attributes can be specified using shorthand syntax on block style using multiple block attribute lines' do
+      input = <<-EOS
+[literal]
+[#first]
+[.lead]
+[%step]
+A literal paragraph.
+      EOS
+      doc = document_from_string(input)
+      para = doc.blocks.first
+      assert_equal :literal, para.context
       assert_equal 'first', para.attributes['id']
       assert_equal 'lead', para.attributes['role']
       assert_equal 'step', para.attributes['options']
@@ -1299,6 +1353,58 @@ Text
       assert_equal 'option1,option2', para.attributes['options']
       assert para.attributes.has_key?('option1-option')
       assert para.attributes.has_key?('option2-option')
+    end
+
+    test 'options specified using shorthand syntax on block style across multiple lines should be additive' do
+      input = <<-EOS
+[%option1]
+[%option2]
+Text
+      EOS
+
+      doc = document_from_string input
+      para = doc.blocks.first
+      assert_equal 'option1,option2', para.attributes['options']
+      assert para.attributes.has_key?('option1-option')
+      assert para.attributes.has_key?('option2-option')
+    end
+
+    test 'roles specified using shorthand syntax on block style across multiple lines should be additive' do
+      input = <<-EOS
+[.role1]
+[.role2.role3]
+Text
+      EOS
+
+      doc = document_from_string input
+      para = doc.blocks.first
+      assert_equal 'role1 role2 role3', para.attributes['role']
+    end
+
+    test 'setting a role using the role attribute replaces any existing roles' do
+      input = <<-EOS
+[.role1]
+[role=role2]
+[.role3]
+Text
+      EOS
+
+      doc = document_from_string input
+      para = doc.blocks.first
+      assert_equal 'role2 role3', para.attributes['role']
+    end
+
+    test 'setting a role using the shorthand syntax on block style should not clear the ID' do
+      input = <<-EOS
+[#id]
+[.role]
+Text
+      EOS
+
+      doc = document_from_string input
+      para = doc.blocks.first
+      assert_equal 'id', para.id
+      assert_equal 'role', para.role
     end
 
     test 'a role can be added using add_role when the node has no roles' do
@@ -1404,7 +1510,6 @@ A normal paragraph
       list = doc.blocks.first
       assert_equal 'interactive', list.attributes['options']
       assert list.attributes.has_key?('interactive-option')
-      assert list.attributes[1] == '%interactive'
     end
 
     test 'id and role attributes can be specified on section style using shorthand syntax' do

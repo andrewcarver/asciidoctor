@@ -1,6 +1,7 @@
 # encoding: UTF-8
 ASCIIDOCTOR_TEST_DIR = File.expand_path File.dirname __FILE__
 ASCIIDOCTOR_PROJECT_DIR = File.dirname ASCIIDOCTOR_TEST_DIR
+ASCIIDOCTOR_LIB_DIR = ENV['ASCIIDOCTOR_LIB_DIR'] || File.join(ASCIIDOCTOR_PROJECT_DIR, 'lib')
 Dir.chdir ASCIIDOCTOR_PROJECT_DIR
 
 if RUBY_VERSION < '1.9'
@@ -9,10 +10,11 @@ end
 
 require 'simplecov' if ENV['COVERAGE'] == 'true'
 
-require File.join(ASCIIDOCTOR_PROJECT_DIR, 'lib', 'asciidoctor')
+require File.join(ASCIIDOCTOR_LIB_DIR, 'asciidoctor')
 
 require 'socket'
 require 'nokogiri'
+require 'tempfile'
 require 'tmpdir'
 
 autoload :FileUtils, 'fileutils'
@@ -302,10 +304,9 @@ class Minitest::Test
         Socket.ip_address_list.find {|addr| addr.ipv4? }.ip_address
   end
 
-  def using_memory_logger debug = false
+  def using_memory_logger
     old_logger = Asciidoctor::LoggerManager.logger
     memory_logger = Asciidoctor::MemoryLogger.new
-    memory_logger.level = Logger::Severity::DEBUG if debug
     begin
       Asciidoctor::LoggerManager.logger = memory_logger
       yield memory_logger
@@ -317,12 +318,9 @@ class Minitest::Test
   def in_verbose_mode
     begin
       old_verbose, $VERBOSE = $VERBOSE, true
-      old_logger_level = Asciidoctor::LoggerManager.logger.level
-      Asciidoctor::LoggerManager.logger.level = Logger::Severity::DEBUG
       yield
     ensure
       $VERBOSE = old_verbose
-      Asciidoctor::LoggerManager.logger.level = old_logger_level
     end
   end
 

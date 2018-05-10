@@ -218,6 +218,9 @@ class Document < AbstractBlock
   # Public: Get the Reader associated with this document
   attr_reader :reader
 
+  # Public: Get/Set the PathResolver instance used to resolve paths in this Document.
+  attr_reader :path_resolver
+
   # Public: Get the Converter associated with this document
   attr_reader :converter
 
@@ -260,6 +263,7 @@ class Document < AbstractBlock
       @attributes['compat-mode'] = '' if (@compat_mode = parent_doc.compat_mode)
       @sourcemap = parent_doc.sourcemap
       @timings = nil
+      @path_resolver = parent_doc.path_resolver
       @converter = parent_doc.converter
       initialize_extensions = false
       @extensions = parent_doc.extensions
@@ -273,7 +277,7 @@ class Document < AbstractBlock
         :images => [],
         :indexterms => [],
         :callouts => Callouts.new,
-        :includes => ::Set.new,
+        :includes => {},
       }
       # copy attributes map and normalize keys
       # attribute overrides are attributes that can only be set from the commandline
@@ -283,7 +287,7 @@ class Document < AbstractBlock
       (options[:attributes] || {}).each do |key, val|
         if key.end_with? '@'
           if key.start_with? '!'
-            key, val = (key.slice 1, key.length - 1), false
+            key, val = (key.slice 1, key.length), false
           elsif key.end_with? '!@'
             key, val = (key.slice 0, key.length - 2), false
           else
@@ -316,6 +320,7 @@ class Document < AbstractBlock
       @compat_mode = attr_overrides.key? 'compat-mode'
       @sourcemap = options[:sourcemap]
       @timings = options.delete :timings
+      @path_resolver = PathResolver.new
       @converter = nil
       initialize_extensions = defined? ::Asciidoctor::Extensions
       @extensions = nil # initialize furthur down
@@ -363,7 +368,7 @@ class Document < AbstractBlock
     attrs['toc-title'] = 'Table of Contents'
     #attrs['preface-title'] = 'Preface'
     attrs['section-refsig'] = 'Section'
-    #attrs['part-refsig'] = 'Part'
+    attrs['part-refsig'] = 'Part'
     attrs['chapter-refsig'] = 'Chapter'
     attrs['appendix-caption'] = attrs['appendix-refsig'] = 'Appendix'
     attrs['untitled-label'] = 'Untitled'
@@ -697,7 +702,7 @@ class Document < AbstractBlock
   # Returns the new [String] title assigned to the document header
   def title= title
     unless (sect = @header)
-      (sect = (@header = Section.new self, 0, false)).sectname = 'header'
+      (sect = (@header = Section.new self, 0)).sectname = 'header'
     end
     sect.title = title
   end

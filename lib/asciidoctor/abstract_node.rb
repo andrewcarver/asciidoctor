@@ -367,7 +367,7 @@ class AbstractNode
 
     if ::File.readable? image_path
       # NOTE base64 is autoloaded by reference to ::Base64
-      %(data:#{mimetype};base64,#{::Base64.encode64(::IO.binread image_path).delete LF})
+      %(data:#{mimetype};base64,#{::Base64.strict_encode64 ::IO.binread image_path})
     else
       logger.warn %(image to embed not found or not readable: #{image_path})
       %(data:#{mimetype};base64,)
@@ -400,12 +400,12 @@ class AbstractNode
 
     begin
       mimetype = nil
-      bindata = open(image_uri, 'rb') {|fd|
+      bindata = open image_uri, 'rb' do |fd|
         mimetype = fd.content_type
         fd.read
-      }
+      end
       # NOTE base64 is autoloaded by reference to ::Base64
-      %(data:#{mimetype};base64,#{::Base64.encode64(bindata).delete LF})
+      %(data:#{mimetype};base64,#{::Base64.strict_encode64 bindata})
     rescue
       logger.warn %(could not retrieve image data from URI: #{image_uri})
       image_uri
@@ -440,8 +440,8 @@ class AbstractNode
   # start  - the String start (i.e., parent) path
   # jail   - the String jail path to confine the resolved path
   # opts   - an optional Hash of options to control processing (default: {}):
-  #          * :recover is used to control whether the processor should auto-recover
-  #              when an illegal path is encountered
+  #          * :recover is used to control whether the processor should
+  #            automatically recover when an illegal path is encountered
   #          * :target_name is used in messages to refer to the path being resolved
   #
   # raises a SecurityError if a jail is specified and the resolved path is
@@ -451,10 +451,9 @@ class AbstractNode
   # parent references resolved and self references removed. If a jail is provided,
   # this path will be guaranteed to be contained within the jail.
   def normalize_system_path target, start = nil, jail = nil, opts = {}
-    path_resolver = (@path_resolver ||= PathResolver.new)
     if (doc = @document).safe < SafeMode::SAFE
       if start
-        start = ::File.join doc.base_dir, start unless path_resolver.root? start
+        start = ::File.join doc.base_dir, start unless doc.path_resolver.root? start
       else
         start = doc.base_dir
       end
@@ -462,7 +461,7 @@ class AbstractNode
       start = doc.base_dir unless start
       jail = doc.base_dir unless jail
     end
-    path_resolver.system_path target, start, jail, opts
+    doc.path_resolver.system_path target, start, jail, opts
   end
 
   # Public: Normalize the web path using the PathResolver.
@@ -478,7 +477,7 @@ class AbstractNode
     if preserve_uri_target && (Helpers.uriish? target)
       uri_encode_spaces target
     else
-      (@path_resolver ||= PathResolver.new).web_path target, start
+      @document.path_resolver.web_path target, start
     end
   end
 
@@ -530,7 +529,7 @@ class AbstractNode
   def read_contents target, opts = {}
     doc = @document
     if (Helpers.uriish? target) || ((start = opts[:start]) && (Helpers.uriish? start) &&
-        (target = (@path_resolver ||= PathResolver.new).web_path target, start))
+        (target = doc.path_resolver.web_path target, start))
       if doc.attr? 'allow-uri-read'
         Helpers.require_library 'open-uri/cached', 'open-uri-cached' if doc.attr? 'cache-uri'
         begin

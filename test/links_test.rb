@@ -11,7 +11,7 @@ context 'Links' do
   end
 
   test 'qualified url with role inline with text' do
-    assert_xpath "//a[@href='http://asciidoc.org'][@class='bare project'][text() = 'http://asciidoc.org']", render_string("The AsciiDoc project is located at http://asciidoc.org[,role=project].", :attributes => {'linkattrs' => ''})
+    assert_xpath "//a[@href='http://asciidoc.org'][@class='bare project'][text() = 'http://asciidoc.org']", render_string("The AsciiDoc project is located at http://asciidoc.org[role=project].")
   end
 
   test 'qualified http url inline with hide-uri-scheme set' do
@@ -43,7 +43,7 @@ context 'Links' do
   end
 
   test 'qualified url with role using link macro' do
-    assert_xpath "//a[@href='http://asciidoc.org'][@class='bare project'][text() = 'http://asciidoc.org']", render_string("We're parsing link:http://asciidoc.org[,role=project] markup", :attributes => {'linkattrs' => ''})
+    assert_xpath "//a[@href='http://asciidoc.org'][@class='bare project'][text() = 'http://asciidoc.org']", render_string("We're parsing link:http://asciidoc.org[role=project] markup")
   end
 
   test 'qualified url using macro syntax with multi-line label inline with text' do
@@ -196,26 +196,35 @@ context 'Links' do
     assert_xpath '//a[@href="https://github.com/asciidoctor"]', render_string('Asciidoctor GitHub organization: <**https://github.com/asciidoctor**>'), 1
   end
 
-  test 'link with quoted text should not be separated into attributes when linkattrs is set' do
-    assert_xpath '//a[@href="http://search.example.com"][text()="Google, Yahoo, Bing = Search Engines"]', render_embedded_string('http://search.example.com["Google, Yahoo, Bing = Search Engines"]', :attributes => {'linkattrs' => ''}), 1
+  test 'link with quoted text should not be separated into attributes when text contains an equal sign' do
+    assert_xpath '//a[@href="http://search.example.com"][text()="Google, Yahoo, Bing = Search Engines"]', render_embedded_string('http://search.example.com["Google, Yahoo, Bing = Search Engines"]'), 1
   end
 
-  test 'link with comma in text but no equal sign should not be separated into attributes when linkattrs is set' do
-    assert_xpath '//a[@href="http://search.example.com"][text()="Google, Yahoo, Bing"]', render_embedded_string('http://search.example.com[Google, Yahoo, Bing]', :attributes => {'linkattrs' => ''}), 1
+  test 'link with quoted text but no equal sign should carry quotes over to output' do
+    assert_xpath %(//a[@href="http://search.example.com"][text()='"Google, Yahoo, Bing"']), render_embedded_string('http://search.example.com["Google, Yahoo, Bing"]'), 1
   end
 
-  test 'role and window attributes on link are processed when linkattrs is set' do
-    assert_xpath '//a[@href="http://google.com"][@class="external"][@target="_blank"]', render_embedded_string('http://google.com[Google, role="external", window="_blank"]', :attributes => {'linkattrs' => ''}), 1
+  test 'link with comma in text but no equal sign should not be separated into attributes' do
+    assert_xpath '//a[@href="http://search.example.com"][text()="Google, Yahoo, Bing"]', render_embedded_string('http://search.example.com[Google, Yahoo, Bing]'), 1
   end
 
-  test 'link macro with attributes but no text should use URL as text when linkattrs is set' do
+  test 'role and window attributes on link are processed' do
+    assert_xpath '//a[@href="http://google.com"][@class="external"][@target="_blank"]', render_embedded_string('http://google.com[Google, role=external, window="_blank"]'), 1
+  end
+
+  test 'link macro with attributes but no text should use URL as text' do
     url = 'https://fonts.googleapis.com/css?family=Roboto:400,400italic,'
-    assert_xpath %(//a[@href="#{url}"][text()="#{url}"]), render_embedded_string(%(link:#{url}[family=Roboto,weight=400]), :attributes => {'linkattrs' => ''}), 1
+    assert_xpath %(//a[@href="#{url}"][text()="#{url}"]), render_embedded_string(%(link:#{url}[family=Roboto,weight=400])), 1
   end
 
-  test 'link macro with comma but no explicit attributes in text should not parse text when linkattrs is set' do
+  test 'link macro with attributes but blank text should use URL as text' do
     url = 'https://fonts.googleapis.com/css?family=Roboto:400,400italic,'
-    assert_xpath %(//a[@href="#{url}"][text()="Roboto,400"]), render_embedded_string(%(link:#{url}[Roboto,400]), :attributes => {'linkattrs' => ''}), 1
+    assert_xpath %(//a[@href="#{url}"][text()="#{url}"]), render_embedded_string(%(link:#{url}[,family=Roboto,weight=400])), 1
+  end
+
+  test 'link macro with comma but no explicit attributes in text should not parse text' do
+    url = 'https://fonts.googleapis.com/css?family=Roboto:400,400italic,'
+    assert_xpath %(//a[@href="#{url}"][text()="Roboto,400"]), render_embedded_string(%(link:#{url}[Roboto,400])), 1
   end
 
   test 'link text that ends in ^ should set link window to _blank' do
@@ -227,21 +236,25 @@ context 'Links' do
   end
 
   test 'rel=noopener should be added to a link that targets a named window when the noopener option is set' do
-    assert_xpath '//a[@href="http://google.com"][@target="name"][@rel="noopener"]', render_embedded_string('http://google.com[Google,window=name,opts=noopener]', :attributes => {'linkattrs' => ''}), 1
+    assert_xpath '//a[@href="http://google.com"][@target="name"][@rel="noopener"]', render_embedded_string('http://google.com[Google,window=name,opts=noopener]'), 1
   end
 
   test 'rel=noopener should not be added to a link if it does not target a window' do
-    result = render_embedded_string 'http://google.com[Google,opts=noopener]', :attributes => {'linkattrs' => ''}
+    result = render_embedded_string 'http://google.com[Google,opts=noopener]'
     assert_xpath '//a[@href="http://google.com"]', result, 1
     assert_xpath '//a[@href="http://google.com"][@rel="noopener"]', result, 0
   end
 
-  test 'id attribute on link are processed when linkattrs is set' do
-    assert_xpath '//a[@href="http://google.com"][@id="link-1"]', render_embedded_string('http://google.com[Google, id="link-1"]', :attributes => {'linkattrs' => ''}), 1
+  test 'rel=nofollow should be added to a link when the nofollow option is set' do
+    assert_xpath '//a[@href="http://google.com"][@target="name"][@rel="nofollow noopener"]', render_embedded_string('http://google.com[Google,window=name,opts="nofollow,noopener"]'), 1
   end
 
-  test 'title attribute on link are processed when linkattrs is set' do
-    assert_xpath '//a[@href="http://google.com"][@title="title-1"]', render_embedded_string('http://google.com[Google, title="title-1"]', :attributes => {'linkattrs' => ''}), 1
+  test 'id attribute on link is processed' do
+    assert_xpath '//a[@href="http://google.com"][@id="link-1"]', render_embedded_string('http://google.com[Google, id="link-1"]'), 1
+  end
+
+  test 'title attribute on link is processed' do
+    assert_xpath '//a[@href="http://google.com"][@title="title-1"]', render_embedded_string('http://google.com[Google, title="title-1"]'), 1
   end
 
   test 'inline irc link' do
@@ -398,14 +411,26 @@ anchor:foo[b[a\]r]text'
     assert_xpath %q(//a[@href="#tigers"][text() = '"About Tigers"']), render_string(input), 1
   end
 
+  test 'should not interpret path sans extension in xref with angled bracket syntax in compat mode' do
+    using_memory_logger do |logger|
+      doc = document_from_string '<<tigers#>>', :header_footer => false, :attributes => { 'compat-mode' => '' }
+      assert_xpath '//a[@href="#tigers#"][text() = "[tigers#]"]', doc.convert, 1
+    end
+  end
+
   test 'xref using angled bracket syntax with path sans extension' do
     doc = document_from_string '<<tigers#>>', :header_footer => false
     assert_xpath '//a[@href="tigers.html"][text() = "tigers.html"]', doc.convert, 1
   end
 
-  test 'inter-document xref should not truncate after period if path has no extension' do
-    result = render_embedded_string '<<using-.net-web-services#,Using .NET web services>>'
-    assert_xpath '//a[@href="using-.net-web-services.html"][text() = "Using .NET web services"]', result, 1
+  test 'inter-document xref should not add suffix to path with a non-AsciiDoc extension' do
+    {
+      'using-.net-web-services' => 'Using .NET web services',
+      '../file.pdf' => 'Download the .pdf file'
+    }.each do |path, text|
+      result = render_embedded_string %(<<#{path}#,#{text}>>)
+      assert_xpath %(//a[@href="#{path}"][text() = "#{text}"]), result, 1
+    end
   end
 
   test 'inter-document xref should only remove the file extension part if the path contains a period elsewhere' do
@@ -430,13 +455,32 @@ anchor:foo[b[a\]r]text'
     assert_xpath '//a[@href="/path/to/tigers.html"][text() = "tigers"]', doc.convert, 1
   end
 
+  test 'xref using angled bracket syntax with path and extension' do
+    using_memory_logger do |logger|
+      doc = document_from_string '<<tigers.adoc>>', :header_footer => false
+      assert_xpath '//a[@href="#tigers.adoc"][text() = "[tigers.adoc]"]', doc.convert, 1
+    end
+  end
+
   test 'xref using angled bracket syntax with path and extension with hash' do
     doc = document_from_string '<<tigers.adoc#>>', :header_footer => false
     assert_xpath '//a[@href="tigers.html"][text() = "tigers.html"]', doc.convert, 1
   end
 
-  test 'xref using angled bracket syntax with path and extension' do
-    doc = document_from_string '<<tigers.adoc>>', :header_footer => false
+  test 'xref using angled bracket syntax with path and extension with fragment' do
+    doc = document_from_string '<<tigers.adoc#id>>', :header_footer => false
+    assert_xpath '//a[@href="tigers.html#id"][text() = "tigers.html"]', doc.convert, 1
+  end
+
+  test 'xref using macro syntax with path and extension in compat mode' do
+    using_memory_logger do |logger|
+      doc = document_from_string 'xref:tigers.adoc[]', :header_footer => false, :attributes => { 'compat-mode' => '' }
+      assert_xpath '//a[@href="#tigers.adoc"][text() = "[tigers.adoc]"]', doc.convert, 1
+    end
+  end
+
+  test 'xref using macro syntax with path and extension' do
+    doc = document_from_string 'xref:tigers.adoc[]', :header_footer => false
     assert_xpath '//a[@href="tigers.html"][text() = "tigers.html"]', doc.convert, 1
   end
 
@@ -456,23 +500,33 @@ anchor:foo[b[a\]r]text'
     assert_xpath '//a[@href="../tigers/#about"][text() = "About Tigers"]', doc.convert, 1
   end
 
+  test 'xref using angled bracket syntax with path and custom relfilesuffix' do
+    attributes = { 'relfilesuffix' => '/' }
+    doc = document_from_string '<<tigers#about,About Tigers>>', :header_footer => false, :attributes => attributes
+    assert_xpath '//a[@href="tigers/#about"][text() = "About Tigers"]', doc.convert, 1
+  end
+
   test 'xref using angled bracket syntax with path which has been included in this document' do
-    using_memory_logger true do |logger|
-      doc = document_from_string '<<tigers#about,About Tigers>>', :header_footer => false
-      doc.catalog[:includes] << 'tigers'
-      output = doc.convert
-      assert_xpath '//a[@href="#about"][text() = "About Tigers"]', output, 1
-      assert_message logger, :WARN, 'invalid reference: about'
+    using_memory_logger do |logger|
+      in_verbose_mode do
+        doc = document_from_string '<<tigers#about,About Tigers>>', :header_footer => false
+        doc.catalog[:includes]['tigers'] = true
+        output = doc.convert
+        assert_xpath '//a[@href="#about"][text() = "About Tigers"]', output, 1
+        assert_message logger, :WARN, 'invalid reference: about'
+      end
     end
   end
 
   test 'xref using angled bracket syntax with nested path which has been included in this document' do
-    using_memory_logger true do |logger|
-      doc = document_from_string '<<part1/tigers#about,About Tigers>>', :header_footer => false
-      doc.catalog[:includes] << 'part1/tigers'
-      output = doc.convert
-      assert_xpath '//a[@href="#about"][text() = "About Tigers"]', output, 1
-      assert_message logger, :WARN, 'invalid reference: about'
+    using_memory_logger do |logger|
+      in_verbose_mode do
+        doc = document_from_string '<<part1/tigers#about,About Tigers>>', :header_footer => false
+        doc.catalog[:includes]['part1/tigers'] = true
+        output = doc.convert
+        assert_xpath '//a[@href="#about"][text() = "About Tigers"]', output, 1
+        assert_message logger, :WARN, 'invalid reference: about'
+      end
     end
   end
 
@@ -629,14 +683,97 @@ see <<foo>>'
 
 See <<foobaz>>.
     EOS
-    using_memory_logger true do |logger|
-      output = render_embedded_string input
-      assert_xpath '//a[@href="#foobaz"][text() = "[foobaz]"]', output, 1
-      assert_message logger, :WARN, 'invalid reference: foobaz'
+    using_memory_logger do |logger|
+      in_verbose_mode do
+        output = render_embedded_string input
+        assert_xpath '//a[@href="#foobaz"][text() = "[foobaz]"]', output, 1
+        assert_message logger, :WARN, 'invalid reference: foobaz'
+      end
     end
   end
 
-  test 'should warn and create link if verbose flag is set, inter-doc xref points to current document, and reference is not found' do
+  test 'should warn and create link if verbose flag is set and reference using # notation is not found' do
+    input = <<-EOS
+[#foobar]
+== Foobar
+
+== Section B
+
+See <<#foobaz>>.
+    EOS
+    using_memory_logger do |logger|
+      in_verbose_mode do
+        output = render_embedded_string input
+        assert_xpath '//a[@href="#foobaz"][text() = "[foobaz]"]', output, 1
+        assert_message logger, :WARN, 'invalid reference: foobaz'
+      end
+    end
+  end
+
+  test 'should produce an internal anchor from an inter-document xref to file included into current file' do
+    input = <<-'EOS'
+= Book Title
+:doctype: book
+
+[#ch1]
+== Chapter 1
+
+So it begins.
+
+Read <<other-chapters.adoc#ch2>> to find out what happens next!
+
+include::other-chapters.adoc[]
+    EOS
+
+    doc = document_from_string input, :safe => :safe, :base_dir => fixturedir
+    assert doc.catalog[:includes].key?('other-chapters')
+    assert doc.catalog[:includes]['other-chapters']
+    output = doc.convert
+    assert_xpath '//a[@href="#ch2"][text()="Chapter 2"]', output, 1
+  end
+
+  test 'should produce an internal anchor from an inter-document xref to file included entirely into current file using tags' do
+    input = <<-'EOS'
+= Book Title
+:doctype: book
+
+[#ch1]
+== Chapter 1
+
+So it begins.
+
+Read <<other-chapters.adoc#ch2>> to find out what happens next!
+
+include::other-chapters.adoc[tags=**]
+    EOS
+
+    output = render_embedded_string input, :safe => :safe, :base_dir => fixturedir
+    assert_xpath '//a[@href="#ch2"][text()="Chapter 2"]', output, 1
+  end
+
+  test 'should not produce an internal anchor for inter-document xref to file partially included into current file' do
+    input = <<-'EOS'
+= Book Title
+:doctype: book
+
+[#ch1]
+== Chapter 1
+
+So it begins.
+
+Read <<other-chapters.adoc#ch2,the next chapter>> to find out what happens next!
+
+include::other-chapters.adoc[tags=ch2]
+    EOS
+
+    doc = document_from_string input, :safe => :safe, :base_dir => fixturedir
+    assert doc.catalog[:includes].key?('other-chapters')
+    refute doc.catalog[:includes]['other-chapters']
+    output = doc.convert
+    assert_xpath '//a[@href="other-chapters.html#ch2"][text()="the next chapter"]', output, 1
+  end
+
+  test 'should warn and create link if debug mode is enabled, inter-document xref points to current doc, and reference not found' do
     input = <<-EOS
 [#foobar]
 == Foobar
@@ -645,10 +782,12 @@ See <<foobaz>>.
 
 See <<test.adoc#foobaz>>.
     EOS
-    using_memory_logger true do |logger|
-      output = render_embedded_string input, :attributes => { 'docname' => 'test' }
-      assert_xpath '//a[@href="#foobaz"][text() = "[foobaz]"]', output, 1
-      assert_message logger, :WARN, 'invalid reference: foobaz'
+    using_memory_logger do |logger|
+      in_verbose_mode do
+        output = render_embedded_string input, :attributes => { 'docname' => 'test' }
+        assert_xpath '//a[@href="#foobaz"][text() = "[foobaz]"]', output, 1
+        assert_message logger, :WARN, 'invalid reference: foobaz'
+      end
     end
   end
 
