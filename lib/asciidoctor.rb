@@ -445,7 +445,7 @@ module Asciidoctor
     #   v1.0, 2013-01-01: Ring in the new year release
     #   1.0, Jan 01, 2013
     #
-    RevisionInfoLineRx = /^(?:\D*(.*?),)? *(?!:)(.*?)(?: *(?!^),?: *(.*))?$/
+    RevisionInfoLineRx = /^(?:[^\d{]*(.*?),)? *(?!:)(.*?)(?: *(?!^),?: *(.*))?$/
 
     # Matches the title and volnum in the manpage doctype.
     #
@@ -528,7 +528,7 @@ module Asciidoctor
     AttributeEntryRx = /^:(!?#{CG_WORD}[^:]*):(?:[ \t]+(.*))?$/
 
     # Matches invalid characters in an attribute name.
-    InvalidAttributeNameCharsRx = /[^#{CC_WORD}-]/
+    InvalidAttributeNameCharsRx = /[^-#{CC_WORD}]/
 
     # Matches a pass inline macro that surrounds the value of an attribute
     # entry once it has been parsed.
@@ -554,7 +554,7 @@ module Asciidoctor
     #   {set:foo:bar}
     #   {set:name!}
     #
-    AttributeReferenceRx = /(\\)?\{(#{CG_WORD}+[-#{CC_WORD}]*|(set|counter2?):.+?)(\\)?\}/
+    AttributeReferenceRx = /(\\)?\{(#{CG_WORD}[-#{CC_WORD}]*|(set|counter2?):.+?)(\\)?\}/
 
     ## Paragraphs and delimited blocks
 
@@ -602,7 +602,7 @@ module Asciidoctor
     #   NOTE: Just a little note.
     #   TIP: Don't forget!
     #
-    AdmonitionParagraphRx = /^(#{ADMONITION_STYLES.to_a * '|'}):[ \t]+/
+    AdmonitionParagraphRx = /^(#{ADMONITION_STYLES.to_a.join '|'}):[ \t]+/
 
     # Matches a literal paragraph, which is a line of text preceded by at least one space.
     #
@@ -649,7 +649,7 @@ module Asciidoctor
 
     # Matches the title only (first line) of an Setext (two-line) section title.
     # The title cannot begin with a dot and must have at least one alphanumeric character.
-    SetextSectionTitleRx = /^((?=.*#{CG_WORD}+.*)[^.].*?)$/
+    SetextSectionTitleRx = /^((?=.*#{CG_WORD}.*)[^.].*?)$/
 
     # Matches an anchor (i.e., id + optional reference text) inside a section title.
     #
@@ -809,7 +809,7 @@ module Asciidoctor
     #
     #--
     # NOTE we've relaxed the match for target to accomodate the short format (e.g., name::[attrlist])
-    CustomBlockMacroRx = /^(#{CG_WORD}+)::(|\S|\S.*?\S)\[(.+)?\]$/
+    CustomBlockMacroRx = /^(#{CG_WORD}[-#{CC_WORD}]*)::(|\S|\S.*?\S)\[(.+)?\]$/
 
     # Matches an image, video or audio block macro.
     #
@@ -932,7 +932,7 @@ module Asciidoctor
 
     # Matches the name of a macro.
     #
-    MacroNameRx = /^#{CG_WORD}+$/
+    MacroNameRx = /^#{CG_WORD}[-#{CC_WORD}]*$/
 
     # Matches a stem (and alternatives, asciimath and latexmath) inline macro, which may span multiple lines.
     #
@@ -1313,7 +1313,7 @@ module Asciidoctor
       # convert it to a Hash as we know it
       attrs = ::Hash[attrs.keys.map {|k| [k, attrs[k]] }]
     else
-      raise ::ArgumentError, %(illegal type for attributes option: #{attrs.class.ancestors * ' < '})
+      raise ::ArgumentError, %(illegal type for attributes option: #{attrs.class.ancestors.join ' < '})
     end
 
     lines = nil
@@ -1331,10 +1331,14 @@ module Asciidoctor
       if (docdate = attrs['docdate'])
         attrs['docyear'] ||= ((docdate.index '-') == 4 ? (docdate.slice 0, 4) : nil)
       else
-        docdate = attrs['docdate'] = (input_mtime.strftime '%Y-%m-%d')
+        docdate = attrs['docdate'] = (input_mtime.strftime '%F')
         attrs['docyear'] ||= input_mtime.year.to_s
       end
-      doctime = (attrs['doctime'] ||= input_mtime.strftime('%H:%M:%S %Z'))
+      doctime = (attrs['doctime'] ||= begin
+          input_mtime.strftime '%T %Z'
+        rescue # Asciidoctor.js fails if timezone string has characters outside basic Latin (see asciidoctor.js#23)
+          input_mtime.strftime '%T %z'
+        end)
       attrs['docdatetime'] = %(#{docdate} #{doctime})
     elsif input.respond_to? :readlines
       # NOTE tty, pipes & sockets can't be rewound, but can't be sniffed easily either

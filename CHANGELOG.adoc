@@ -19,10 +19,16 @@ Enhancements::
 
   * allow position (float) and alignment (align) to be set on video block (#2425)
 
+Fixes::
+
+  * AbstractNode#set_option does nothing if option is already set (PR #2778)
+  * allow revnumber to be an attribute reference in revision info line (#2785)
+
 Improvements::
 
   * use CSS class instead of hard-coded inline float style on tables and images (#2753)
   * use CSS class instead of hard-coded inline text-align style on block images (#2753)
+  * allow hyphen to be used custom block macro name as long as it's not the first character (#2620)
 
 == 1.5.7.1 (2018-05-10) - @mojavelinux
 
@@ -44,6 +50,7 @@ Enhancements::
   * BREAKING: drop XML tags, character refs, and non-word characters (except hyphen, dot, and space) when auto-generating section IDs (#794)
    ** hyphen, dot, and space are replaced with value of idseparator, if set; otherwise, spaces are dropped
   * allow attribute names to contain any word character defined by Unicode (#2376, PR #2393)
+  * do not recognize attribute entry line if name contains a colon (PR #2377)
   * route all processor messages through a logger instead of using Kernel#warn (#44, PR #2660)
   * add MemoryLogger for capturing messages sent to logger into memory (#44, PR #2660)
   * add NullLogger to prevent messages from being logged (#44, PR #2660)
