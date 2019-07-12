@@ -1,4 +1,4 @@
-# encoding: UTF-8
+# frozen_string_literal: true
 module Asciidoctor
 # Public: Methods for managing sections of AsciiDoc content in a document.
 # The section responds as an Array of content blocks by delegating
@@ -111,13 +111,7 @@ class Section < AbstractBlock
   # Returns the section number as a String
   def sectnum(delimiter = '.', append = nil)
     append ||= (append == false ? '' : delimiter)
-    if @level == 1
-      %(#{@number}#{append})
-    elsif @level > 1
-      Section === @parent ? %(#{@parent.sectnum(delimiter)}#{@number}#{append}) : %(#{@number}#{append})
-    else # @level == 0
-      %(#{Helpers.int_to_roman @number}#{append})
-    end
+    @level > 1 && Section === @parent ? %(#{@parent.sectnum(delimiter, delimiter)}#{@numeral}#{append}) : %(#{@numeral}#{append})
   end
 
   # (see AbstractBlock#xreftext)
@@ -129,9 +123,9 @@ class Section < AbstractBlock
         case xrefstyle
         when 'full'
           if (type = @sectname) == 'chapter' || type == 'appendix'
-            quoted_title = sprintf sub_quotes('_%s_'), title
+            quoted_title = sub_placeholder (sub_quotes '_%s_'), title
           else
-            quoted_title = sprintf sub_quotes(@document.compat_mode ? %q(``%s'') : '"`%s`"'), title
+            quoted_title = sub_placeholder (sub_quotes @document.compat_mode ? %q(``%s'') : '"`%s`"'), title
           end
           if (signifier = @document.attributes[%(#{type}-refsig)])
             %(#{signifier} #{sectnum '.', ','} #{quoted_title})
@@ -145,10 +139,10 @@ class Section < AbstractBlock
             sectnum '.', ''
           end
         else # 'basic'
-          (type = @sectname) == 'chapter' || type == 'appendix' ? (sprintf sub_quotes('_%s_'), title) : title
+          (type = @sectname) == 'chapter' || type == 'appendix' ? (sub_placeholder (sub_quotes '_%s_'), title) : title
         end
       else # apply basic styling
-        (type = @sectname) == 'chapter' || type == 'appendix' ? (sprintf sub_quotes('_%s_'), title) : title
+        (type = @sectname) == 'chapter' || type == 'appendix' ? (sub_placeholder (sub_quotes '_%s_'), title) : title
       end
     else
       title
@@ -214,9 +208,10 @@ class Section < AbstractBlock
       # ensure id doesn't begin with idseparator if idprefix is empty (assuming idseparator is not empty)
       gen_id = gen_id.slice 1, gen_id.length if pre.empty? && (gen_id.start_with? sep)
     end
-    if document.catalog[:ids].key? gen_id
-      ids, cnt = document.catalog[:ids], Compliance.unique_id_start_index
-      cnt += 1 while ids.key?(candidate_id = %(#{gen_id}#{sep}#{cnt}))
+    if document.catalog[:refs].key? gen_id
+      ids = document.catalog[:refs]
+      cnt = Compliance.unique_id_start_index
+      cnt += 1 while ids[candidate_id = %(#{gen_id}#{sep}#{cnt})]
       candidate_id
     else
       gen_id

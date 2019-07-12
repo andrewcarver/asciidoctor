@@ -1,8 +1,5 @@
-# encoding: UTF-8
-unless defined? ASCIIDOCTOR_PROJECT_DIR
-  $: << File.dirname(__FILE__); $:.uniq!
-  require 'test_helper'
-end
+# frozen_string_literal: true
+require_relative 'test_helper'
 
 context 'Path Resolver' do
   context 'Web Paths' do
@@ -149,7 +146,7 @@ context 'Path Resolver' do
 
     test 'throws exception for illegal path access if recover is false' do
       begin
-        @resolver.system_path('../../../../../css', "#{JAIL}/assets/stylesheets", JAIL, :recover => false)
+        @resolver.system_path('../../../../../css', "#{JAIL}/assets/stylesheets", JAIL, recover: false)
         flunk 'Expecting SecurityError to be raised'
       rescue SecurityError
       end
@@ -248,13 +245,13 @@ context 'Path Resolver' do
 
     test 'raises security error if start is not contained within jail and recover is disabled' do
       begin
-        @resolver.system_path('images/tiger.png', '/etc', JAIL, :recover => false)
+        @resolver.system_path('images/tiger.png', '/etc', JAIL, recover: false)
         flunk 'Expecting SecurityError to be raised'
       rescue SecurityError
       end
 
       begin
-        @resolver.system_path('.', '/etc', JAIL, :recover => false)
+        @resolver.system_path('.', '/etc', JAIL, recover: false)
         flunk 'Expecting SecurityError to be raised'
       rescue SecurityError
       end
@@ -276,8 +273,25 @@ context 'Path Resolver' do
       assert_equal '/usr/share/assets/stylesheet.css', @resolver.system_path('assets/stylesheet.css', '/usr/share')
     end
 
-    test 'resolves absolute UNC path if start is absolute and target is relative' do
+    test 'File.dirname preserves UNC path root on Windows' do
+      assert_equal File.dirname('\\\\server\\docs\\file.html'), '\\\\server\\docs'
+    end if windows?
+
+    test 'File.dirname preserves posix-style UNC path root on Windows' do
+      assert_equal File.dirname('//server/docs/file.html'), '//server/docs'
+    end if windows?
+
+    test 'resolves UNC path if start is absolute and target is relative' do
       assert_equal '//QA/c$/users/asciidoctor/assets/stylesheet.css', @resolver.system_path('assets/stylesheet.css', '//QA/c$/users/asciidoctor')
+    end
+
+    test 'resolves UNC path if target is UNC path' do
+      @resolver.file_separator = '\\'
+      assert_equal '//server/docs/output.html', @resolver.system_path('\\\\server\\docs\\output.html')
+    end
+
+    test 'resolves UNC path if target is posix-style UNC path' do
+      assert_equal '//server/docs/output.html', @resolver.system_path('//server/docs/output.html')
     end
 
     test 'resolves relative target relative to current directory if start is empty' do
@@ -330,16 +344,23 @@ context 'Path Resolver' do
       assert_equal 'part1/chapter1/section1.adoc', @resolver.relative_path(filename, JAIL)
     end
 
-    test 'should resolve relative path to filename if does not share common root with base directory' do
-      filename = '/docs/partials'
+    test 'should resolve relative path to filename outside of base directory' do
+      filename = '/home/shared/partials'
       base_dir = '/home/user/docs'
       result = @resolver.relative_path filename, base_dir
-      assert_equal filename, result
+      assert_equal '../../shared/partials', result
     end
+
+    test 'should return original path if relative path cannot be computed' do
+      filename = 'D:/path/to/include/file.txt'
+      base_dir = 'C:/docs'
+      result = @resolver.relative_path filename, base_dir
+      assert_equal 'D:/path/to/include/file.txt', result
+    end if windows?
 
     test 'should resolve relative path relative to base dir in unsafe mode' do
       base_dir = fixture_path 'base'
-      doc = empty_document :base_dir => base_dir, :safe => Asciidoctor::SafeMode::UNSAFE
+      doc = empty_document base_dir: base_dir, safe: Asciidoctor::SafeMode::UNSAFE
       expected = ::File.join base_dir, 'images', 'tiger.png'
       actual = doc.normalize_system_path 'tiger.png', 'images'
       assert_equal expected, actual
@@ -347,32 +368,9 @@ context 'Path Resolver' do
 
     test 'should resolve absolute path as absolute in unsafe mode' do
       base_dir = fixture_path 'base'
-      doc = empty_document :base_dir => base_dir, :safe => Asciidoctor::SafeMode::UNSAFE
+      doc = empty_document base_dir: base_dir, safe: Asciidoctor::SafeMode::UNSAFE
       actual = doc.normalize_system_path 'tiger.png', '/etc/images'
       assert_equal '/etc/images/tiger.png', actual
-    end
-  end
-
-  context 'Helpers' do
-    test 'rootname should return file name without extension' do
-      assert_equal 'master', Asciidoctor::Helpers.rootname('master.adoc')
-      assert_equal 'docs/master', Asciidoctor::Helpers.rootname('docs/master.adoc')
-    end
-
-    test 'rootname should file name if it has no extension' do
-      assert_equal 'master', Asciidoctor::Helpers.rootname('master')
-      assert_equal 'docs/master', Asciidoctor::Helpers.rootname('docs/master')
-    end
-
-    test 'UriSniffRx should detect URIs' do
-      assert Asciidoctor::UriSniffRx =~ 'http://example.com'
-      assert Asciidoctor::UriSniffRx =~ 'https://example.com'
-      assert Asciidoctor::UriSniffRx =~ 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs='
-    end
-
-    test 'UriSniffRx should not detect an absolute Windows path as a URI' do
-      assert Asciidoctor::UriSniffRx !~ 'c:/sample.adoc'
-      assert Asciidoctor::UriSniffRx !~ 'c:\\sample.adoc'
     end
   end
 end

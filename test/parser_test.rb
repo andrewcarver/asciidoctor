@@ -1,11 +1,7 @@
-# encoding: UTF-8
-unless defined? ASCIIDOCTOR_PROJECT_DIR
-  $: << File.dirname(__FILE__); $:.uniq!
-  require 'test_helper'
-end
+# frozen_string_literal: true
+require_relative 'test_helper'
 
 context "Parser" do
-
   test "is_section_title?" do
     assert Asciidoctor::Parser.is_section_title?('AsciiDoc Home Page', '==================')
     assert Asciidoctor::Parser.is_section_title?('=== AsciiDoc Home Page')
@@ -61,7 +57,7 @@ context "Parser" do
   end
 
   test 'store inaccessible attribute on document with value' do
-    doc = empty_document :attributes => { 'foo' => 'baz' }
+    doc = empty_document attributes: { 'foo' => 'baz' }
     attrs = {}
     attr_name, attr_value = Asciidoctor::Parser.store_attribute 'foo', 'bar', doc, attrs
     assert_equal 'foo', attr_name
@@ -87,7 +83,7 @@ context "Parser" do
 
   test 'store inaccessible attribute on document with negated value' do
     { 'foo!' => nil, '!foo' => nil, 'foo' => nil }.each do |name, value|
-      doc = empty_document :attributes => { 'foo' => 'baz' }
+      doc = empty_document attributes: { 'foo' => 'baz' }
       attrs = {}
       attr_name, attr_value = Asciidoctor::Parser.store_attribute name, value, doc, attrs
       assert_equal name.sub('!', ''), attr_name
@@ -96,191 +92,8 @@ context "Parser" do
     end
   end
 
-  test "collect unnamed attribute" do
-    attributes = {}
-    line = 'quote'
-    expected = {1 => 'quote'}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test "collect unnamed attribute double-quoted" do
-    attributes = {}
-    line = '"quote"'
-    expected = {1 => 'quote'}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test "collect empty unnamed attribute double-quoted" do
-    attributes = {}
-    line = '""'
-    expected = {1 => ''}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test "collect unnamed attribute double-quoted containing escaped quote" do
-    attributes = {}
-    line = '"ba\"zaar"'
-    expected = {1 => 'ba"zaar'}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test "collect unnamed attribute single-quoted" do
-    attributes = {}
-    line = '\'quote\''
-    expected = {1 => 'quote'}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test "collect empty unnamed attribute single-quoted" do
-    attributes = {}
-    line = '\'\''
-    expected = {1 => ''}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test "collect unnamed attribute single-quoted containing escaped quote" do
-    attributes = {}
-    line = '\'ba\\\'zaar\''
-    expected = {1 => 'ba\'zaar'}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test "collect unnamed attribute with dangling delimiter" do
-    attributes = {}
-    line = 'quote , '
-    expected = {1 => 'quote'}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test "collect unnamed attribute in second position after empty attribute" do
-    attributes = {}
-    line = ', John Smith'
-    expected = {1 => nil, 2 => 'John Smith'}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test "collect unnamed attributes" do
-    attributes = {}
-    line = "first, second one, third"
-    expected = {1 => 'first', 2 => 'second one', 3 => 'third'}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test "collect named attribute" do
-    attributes = {}
-    line = 'foo=bar'
-    expected = {'foo' => 'bar'}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test "collect named attribute double-quoted" do
-    attributes = {}
-    line = 'foo="bar"'
-    expected = {'foo' => 'bar'}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test 'collect named attribute with double-quoted empty value' do
-    attributes = {}
-    line = 'height=100,caption="",link="images/octocat.png"'
-    expected = {'height' => '100', 'caption' => '', 'link' => 'images/octocat.png'}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test "collect named attribute single-quoted" do
-    attributes = {}
-    line = 'foo=\'bar\''
-    expected = {'foo' => 'bar'}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test 'collect named attribute with single-quoted empty value' do
-    attributes = {}
-    line = "height=100,caption='',link='images/octocat.png'"
-    expected = {'height' => '100', 'caption' => '', 'link' => 'images/octocat.png'}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test "collect named attributes unquoted" do
-    attributes = {}
-    line = "first=value, second=two, third=3"
-    expected = {'first' => 'value', 'second' => 'two', 'third' => '3'}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test "collect named attributes quoted" do
-    attributes = {}
-    line = "first='value', second=\"value two\", third=three"
-    expected = {'first' => 'value', 'second' => 'value two', 'third' => 'three'}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test "collect named attributes quoted containing non-semantic spaces" do
-    attributes = {}
-    line = "     first    =     'value', second     =\"value two\"     , third=       three      "
-    expected = {'first' => 'value', 'second' => 'value two', 'third' => 'three'}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test "collect mixed named and unnamed attributes" do
-    attributes = {}
-    line = "first, second=\"value two\", third=three, Sherlock Holmes"
-    expected = {1 => 'first', 'second' => 'value two', 'third' => 'three', 4 => 'Sherlock Holmes'}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test "collect options attribute" do
-    attributes = {}
-    line = "quote, options='opt1,opt2 , opt3'"
-    expected = {1 => 'quote', 'options' => 'opt1,opt2,opt3', 'opt1-option' => '', 'opt2-option' => '', 'opt3-option' => ''}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test "collect opts attribute as options" do
-    attributes = {}
-    line = "quote, opts='opt1,opt2 , opt3'"
-    expected = {1 => 'quote', 'options' => 'opt1,opt2,opt3', 'opt1-option' => '', 'opt2-option' => '', 'opt3-option' => ''}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes)
-    assert_equal expected, attributes
-  end
-
-  test "collect and rekey unnamed attributes" do
-    attributes = {}
-    line = "first, second one, third, fourth"
-    expected = {1 => 'first', 2 => 'second one', 3 => 'third', 4 => 'fourth', 'a' => 'first', 'b' => 'second one', 'c' => 'third'}
-    Asciidoctor::AttributeList.new(line).parse_into(attributes, ['a', 'b', 'c'])
-    assert_equal expected, attributes
-  end
-
-  test "rekey positional attributes" do
-    attributes = {1 => 'source', 2 => 'java'}
-    expected = {1 => 'source', 2 => 'java', 'style' => 'source', 'language' => 'java'}
-    Asciidoctor::AttributeList.rekey(attributes, ['style', 'language', 'linenums'])
-    assert_equal expected, attributes
-  end
-
   test 'parse style attribute with id and role' do
-    attributes = {1 => 'style#id.role'}
+    attributes = { 1 => 'style#id.role' }
     style = Asciidoctor::Parser.parse_style_attribute(attributes)
     assert_equal 'style', style
     assert_equal 'style', attributes['style']
@@ -290,19 +103,19 @@ context "Parser" do
   end
 
   test 'parse style attribute with style, role, id and option' do
-    attributes = {1 => 'style.role#id%fragment'}
+    attributes = { 1 => 'style.role#id%fragment' }
     style = Asciidoctor::Parser.parse_style_attribute(attributes)
     assert_equal 'style', style
     assert_equal 'style', attributes['style']
     assert_equal 'id', attributes['id']
     assert_equal 'role', attributes['role']
     assert_equal '', attributes['fragment-option']
-    assert_equal 'fragment', attributes['options']
     assert_equal 'style.role#id%fragment', attributes[1]
+    refute attributes.key? 'options'
   end
 
   test 'parse style attribute with style, id and multiple roles' do
-    attributes = {1 => 'style#id.role1.role2'}
+    attributes = { 1 => 'style#id.role1.role2' }
     style = Asciidoctor::Parser.parse_style_attribute(attributes)
     assert_equal 'style', style
     assert_equal 'style', attributes['style']
@@ -312,7 +125,7 @@ context "Parser" do
   end
 
   test 'parse style attribute with style, multiple roles and id' do
-    attributes = {1 => 'style.role1.role2#id'}
+    attributes = { 1 => 'style.role1.role2#id' }
     style = Asciidoctor::Parser.parse_style_attribute(attributes)
     assert_equal 'style', style
     assert_equal 'style', attributes['style']
@@ -322,7 +135,7 @@ context "Parser" do
   end
 
   test 'parse style attribute with positional and original style' do
-    attributes = {1 => 'new_style', 'style' => 'original_style'}
+    attributes = { 1 => 'new_style', 'style' => 'original_style' }
     style = Asciidoctor::Parser.parse_style_attribute(attributes)
     assert_equal 'new_style', style
     assert_equal 'new_style', attributes['style']
@@ -330,7 +143,7 @@ context "Parser" do
   end
 
   test 'parse style attribute with id and role only' do
-    attributes = {1 => '#id.role'}
+    attributes = { 1 => '#id.role' }
     style = Asciidoctor::Parser.parse_style_attribute(attributes)
     assert_nil style
     assert_equal 'id', attributes['id']
@@ -339,7 +152,7 @@ context "Parser" do
   end
 
   test 'parse empty style attribute' do
-    attributes = {1 => nil}
+    attributes = { 1 => nil }
     style = Asciidoctor::Parser.parse_style_attribute(attributes)
     assert_nil style
     assert_nil attributes['id']
@@ -348,10 +161,9 @@ context "Parser" do
   end
 
   test 'parse style attribute with option should preserve existing options' do
-    attributes = {1 => '%header', 'options' => 'footer', 'footer-option' => ''}
+    attributes = { 1 => '%header', 'footer-option' => '' }
     style = Asciidoctor::Parser.parse_style_attribute(attributes)
     assert_nil style
-    assert_equal 'footer,header', attributes['options']
     assert_equal '', attributes['header-option']
     assert_equal '', attributes['footer-option']
   end
@@ -481,7 +293,7 @@ context "Parser" do
     assert_equal 'Stéphane', metadata['firstname']
     assert_equal 'Brontë', metadata['lastname']
     assert_equal 'SB', metadata['authorinitials']
-  end if ::RUBY_MIN_VERSION_1_9
+  end
 
   test 'parse ideographic author names' do
     metadata, _ = parse_header_metadata '李 四 <si.li@example.com>'
@@ -493,10 +305,10 @@ context "Parser" do
     assert_equal '四', metadata['lastname']
     assert_equal 'si.li@example.com', metadata['email']
     assert_equal '李四', metadata['authorinitials']
-  end if ::RUBY_MIN_VERSION_1_9
+  end
 
   test "parse author condenses whitespace" do
-    metadata, _ = parse_header_metadata '   Stuart       Rackham     <founder@asciidoc.org>'
+    metadata, _ = parse_header_metadata 'Stuart       Rackham     <founder@asciidoc.org>'
     assert_equal 7, metadata.size
     assert_equal 1, metadata['authorcount']
     assert_equal 'Stuart Rackham', metadata['author']
@@ -526,6 +338,11 @@ context "Parser" do
     assert_equal 'John Smith', metadata['author_2']
   end
 
+  test 'should not parse multiple authors if semi-colon is not followed by space' do
+    metadata, _ = parse_header_metadata 'Joe Doe;Smith Johnson'
+    assert_equal 1, metadata['authorcount']
+  end
+
   test 'skips blank author entries in implicit author line' do
     metadata, _ = parse_header_metadata 'Doc Writer; ; John Smith <john.smith@asciidoc.org>;'
     assert_equal 2, metadata['authorcount']
@@ -542,6 +359,26 @@ context "Parser" do
     assert_equal 'Scherer, Jr.', doc.attributes['lastname']
   end
 
+  test 'use explicit authorinitials if set after implicit author line' do
+    input = <<~'EOS'
+    Jean-Claude Van Damme
+    :authorinitials: JCVD
+    EOS
+    doc = empty_document
+    parse_header_metadata input, doc
+    assert_equal 'JCVD', doc.attributes['authorinitials']
+  end
+
+  test 'use explicit authorinitials if set after author attribute' do
+    input = <<~'EOS'
+    :author: Jean-Claude Van Damme
+    :authorinitials: JCVD
+    EOS
+    doc = empty_document
+    parse_header_metadata input, doc
+    assert_equal 'JCVD', doc.attributes['authorinitials']
+  end
+
   test 'sets authorcount to 0 if document has no authors' do
     input = ''
     doc = empty_document
@@ -551,9 +388,7 @@ context "Parser" do
   end
 
   test 'does not drop name joiner when using multiple authors' do
-    input = <<-EOS
-Kismet Chameleon; Lazarus het_Draeke
-    EOS
+    input = 'Kismet Chameleon; Lazarus het_Draeke'
     doc = empty_document
     parse_header_metadata input, doc
     assert_equal 2, doc.attributes['authorcount']
@@ -564,9 +399,9 @@ Kismet Chameleon; Lazarus het_Draeke
   end
 
   test 'allows authors to be overridden using explicit author attributes' do
-    input = <<-EOS
-Kismet Chameleon; Johnny Bravo; Lazarus het_Draeke
-:author_2: Danger Mouse
+    input = <<~'EOS'
+    Kismet Chameleon; Johnny Bravo; Lazarus het_Draeke
+    :author_2: Danger Mouse
     EOS
     doc = empty_document
     parse_header_metadata input, doc
@@ -579,9 +414,7 @@ Kismet Chameleon; Johnny Bravo; Lazarus het_Draeke
   end
 
   test 'removes formatting before partitioning author defined using author attribute' do
-    input = <<-EOS
-:author: pass:n[http://example.org/community/team.html[Ze_**Project** team]]
-    EOS
+    input = ':author: pass:n[http://example.org/community/team.html[Ze_**Project** team]]'
 
     doc = empty_document
     parse_header_metadata input, doc
@@ -592,9 +425,9 @@ Kismet Chameleon; Johnny Bravo; Lazarus het_Draeke
   end
 
   test "parse rev number date remark" do
-    input = <<-EOS
-Ryan Waldron
-v0.0.7, 2013-12-18: The first release you can stand on
+    input = <<~'EOS'
+    Ryan Waldron
+    v0.0.7, 2013-12-18: The first release you can stand on
     EOS
     metadata, _ = parse_header_metadata input
     assert_equal 9, metadata.size
@@ -604,9 +437,9 @@ v0.0.7, 2013-12-18: The first release you can stand on
   end
 
   test 'parse rev number, data, and remark as attribute references' do
-    input = <<-EOS
-Author Name
-v{project-version}, {release-date}: {release-summary}
+    input = <<~'EOS'
+    Author Name
+    v{project-version}, {release-date}: {release-summary}
     EOS
     metadata, _ = parse_header_metadata input
     assert_equal 9, metadata.size
@@ -616,15 +449,15 @@ v{project-version}, {release-date}: {release-summary}
   end
 
   test 'should resolve attribute references in rev number, data, and remark' do
-    input = <<-EOS
-= Document Title
-Author Name
-{project-version}, {release-date}: {release-summary}
+    input = <<~'EOS'
+    = Document Title
+    Author Name
+    {project-version}, {release-date}: {release-summary}
     EOS
-    doc = document_from_string input, :attributes => {
+    doc = document_from_string input, attributes: {
       'project-version' => '1.0.1',
       'release-date' => '2018-05-15',
-      'release-summary' => 'The one you can count on!'
+      'release-summary' => 'The one you can count on!',
     }
     assert_equal '1.0.1', (doc.attr 'revnumber')
     assert_equal '2018-05-15', (doc.attr 'revdate')
@@ -632,9 +465,9 @@ Author Name
   end
 
   test "parse rev date" do
-    input = <<-EOS
-Ryan Waldron
-2013-12-18
+    input = <<~'EOS'
+    Ryan Waldron
+    2013-12-18
     EOS
     metadata, _ = parse_header_metadata input
     assert_equal 7, metadata.size
@@ -642,9 +475,9 @@ Ryan Waldron
   end
 
   test 'parse rev number with trailing comma' do
-    input = <<-EOS
-Stuart Rackham
-v8.6.8,
+    input = <<~'EOS'
+    Stuart Rackham
+    v8.6.8,
     EOS
     metadata, _ = parse_header_metadata input
     assert_equal 7, metadata.size
@@ -654,9 +487,9 @@ v8.6.8,
 
   # Asciidoctor recognizes a standalone revision without a trailing comma
   test 'parse rev number' do
-    input = <<-EOS
-Stuart Rackham
-v8.6.8
+    input = <<~'EOS'
+    Stuart Rackham
+    v8.6.8
     EOS
     metadata, _ = parse_header_metadata input
     assert_equal 7, metadata.size
@@ -666,9 +499,9 @@ v8.6.8
 
   # while compliant w/ AsciiDoc, this is just sloppy parsing
   test "treats arbitrary text on rev line as revdate" do
-    input = <<-EOS
-Ryan Waldron
-foobar
+    input = <<~'EOS'
+    Ryan Waldron
+    foobar
     EOS
     metadata, _ = parse_header_metadata input
     assert_equal 7, metadata.size
@@ -676,9 +509,9 @@ foobar
   end
 
   test "parse rev date remark" do
-    input = <<-EOS
-Ryan Waldron
-2013-12-18:  The first release you can stand on
+    input = <<~'EOS'
+    Ryan Waldron
+    2013-12-18:  The first release you can stand on
     EOS
     metadata, _ = parse_header_metadata input
     assert_equal 8, metadata.size
@@ -687,9 +520,9 @@ Ryan Waldron
   end
 
   test "should not mistake attribute entry as rev remark" do
-    input = <<-EOS
-Joe Cool
-:page-layout: post
+    input = <<~'EOS'
+    Joe Cool
+    :page-layout: post
     EOS
     metadata, _ = parse_header_metadata input
     refute_equal 'page-layout: post', metadata['revremark']
@@ -697,9 +530,10 @@ Joe Cool
   end
 
   test "parse rev remark only" do
-    input = <<-EOS
-Joe Cool
- :Must start revremark-only line with space
+    # NOTE cannot use single-quoted heredoc because of https://github.com/jruby/jruby/issues/4260
+    input = <<~EOS
+    Joe Cool
+     :Must start revremark-only line with space
     EOS
     metadata, _ = parse_header_metadata input
     assert_equal 'Must start revremark-only line with space', metadata['revremark']
@@ -707,10 +541,10 @@ Joe Cool
   end
 
   test "skip line comments before author" do
-    input = <<-EOS
-// Asciidoctor
-// release artist
-Ryan Waldron
+    input = <<~'EOS'
+    // Asciidoctor
+    // release artist
+    Ryan Waldron
     EOS
     metadata, _ = parse_header_metadata input
     assert_equal 6, metadata.size
@@ -722,12 +556,12 @@ Ryan Waldron
   end
 
   test "skip block comment before author" do
-    input = <<-EOS
-////
-Asciidoctor
-release artist
-////
-Ryan Waldron
+    input = <<~'EOS'
+    ////
+    Asciidoctor
+    release artist
+    ////
+    Ryan Waldron
     EOS
     metadata, _ = parse_header_metadata input
     assert_equal 6, metadata.size
@@ -739,13 +573,13 @@ Ryan Waldron
   end
 
   test "skip block comment before rev" do
-    input = <<-EOS
-Ryan Waldron
-////
-Asciidoctor
-release info
-////
-v0.0.7, 2013-12-18
+    input = <<~'EOS'
+    Ryan Waldron
+    ////
+    Asciidoctor
+    release info
+    ////
+    v0.0.7, 2013-12-18
     EOS
     metadata, _ = parse_header_metadata input
     assert_equal 8, metadata.size
@@ -756,11 +590,11 @@ v0.0.7, 2013-12-18
   end
 
   test 'break header at line with three forward slashes' do
-    input = <<-EOS
-Joe Cool
-v1.0
-///
-stuff
+    input = <<~'EOS'
+    Joe Cool
+    v1.0
+    ///
+    stuff
     EOS
     metadata, _ = parse_header_metadata input
     assert_equal 7, metadata.size
@@ -777,7 +611,16 @@ stuff
   end
 
   test 'adjust indentation to 0' do
-    input = <<-EOS.chomp
+    input = <<~EOS
+    \x20   def names
+
+    \x20     @name.split
+
+    \x20   end
+    EOS
+
+    # NOTE cannot use single-quoted heredoc because of https://github.com/jruby/jruby/issues/4260
+    expected = <<~EOS.chop
     def names
 
       @name.split
@@ -785,95 +628,87 @@ stuff
     end
     EOS
 
-    expected = <<-EOS.chomp
-def names
-
-  @name.split
-
-end
-    EOS
-
-    lines = input.split("\n")
+    lines = input.split ?\n
     Asciidoctor::Parser.adjust_indentation! lines
-    assert_equal expected, (lines * "\n")
+    assert_equal expected, (lines * ?\n)
   end
 
   test 'adjust indentation mixed with tabs and spaces to 0' do
-    input = <<-EOS.chomp
+    input = <<~EOS
+        def names
+
+    \t  @name.split
+
+        end
+    EOS
+
+    expected = <<~EOS.chop
     def names
 
-\t  @name.split
+      @name.split
 
     end
     EOS
 
-    expected = <<-EOS.chomp
-def names
-
-  @name.split
-
-end
-    EOS
-
-    lines = input.split("\n")
+    lines = input.split ?\n
     Asciidoctor::Parser.adjust_indentation! lines, 0, 4
-    assert_equal expected, (lines * "\n")
+    assert_equal expected, (lines * ?\n)
   end
 
   test 'expands tabs to spaces' do
-    input = <<-EOS.chomp
-Filesystem				Size	Used	Avail	Use%	Mounted on
-Filesystem              Size    Used    Avail   Use%    Mounted on
-devtmpfs				3.9G	   0	 3.9G	  0%	/dev
-/dev/mapper/fedora-root	 48G	 18G	  29G	 39%	/
+    input = <<~'EOS'
+    Filesystem				Size	Used	Avail	Use%	Mounted on
+    Filesystem              Size    Used    Avail   Use%    Mounted on
+    devtmpfs				3.9G	   0	 3.9G	  0%	/dev
+    /dev/mapper/fedora-root	 48G	 18G	  29G	 39%	/
     EOS
 
-    expected = <<-EOS.chomp
-Filesystem              Size    Used    Avail   Use%    Mounted on
-Filesystem              Size    Used    Avail   Use%    Mounted on
-devtmpfs                3.9G       0     3.9G     0%    /dev
-/dev/mapper/fedora-root  48G     18G      29G    39%    /
+    expected = <<~'EOS'.chop
+    Filesystem              Size    Used    Avail   Use%    Mounted on
+    Filesystem              Size    Used    Avail   Use%    Mounted on
+    devtmpfs                3.9G       0     3.9G     0%    /dev
+    /dev/mapper/fedora-root  48G     18G      29G    39%    /
     EOS
 
-    lines = input.split("\n")
+    lines = input.split ?\n
     Asciidoctor::Parser.adjust_indentation! lines, 0, 4
-    assert_equal expected, (lines * "\n")
+    assert_equal expected, (lines * ?\n)
   end
 
   test 'adjust indentation to non-zero' do
-    input = <<-EOS.chomp
-    def names
+    input = <<~EOS
+    \x20   def names
 
-      @name.split
+    \x20     @name.split
 
-    end
+    \x20   end
     EOS
 
-    expected = <<-EOS.chomp
-  def names
+    expected = <<~EOS.chop
+    \x20 def names
 
-    @name.split
+    \x20   @name.split
 
-  end
+    \x20 end
     EOS
 
-    lines = input.split("\n")
+    lines = input.split ?\n
     Asciidoctor::Parser.adjust_indentation! lines, 2
-    assert_equal expected, (lines * "\n")
+    assert_equal expected, (lines * ?\n)
   end
 
   test 'preserve block indent if indent is -1' do
-    input = <<-EOS
-    def names
+    input = <<~EOS
+    \x20   def names
 
-      @name.split
+    \x20     @name.split
 
-    end
+    \x20   end
     EOS
 
     expected = input
 
-    lines = input.lines.entries
+    lines = input.lines
     Asciidoctor::Parser.adjust_indentation! lines, -1
     assert_equal expected, lines.join
   end
@@ -887,4 +722,19 @@ devtmpfs                3.9G       0     3.9G     0%    /dev
     assert_equal expected, lines
   end
 
+  test 'should warn if inline anchor is already in use' do
+    input = <<~'EOS'
+    [#in-use]
+    A paragraph with an id.
+
+    Another paragraph
+    [[in-use]]that uses an id
+    which is already in use.
+    EOS
+
+    using_memory_logger do |logger|
+      document_from_string input
+      assert_message logger, :WARN, '<stdin>: line 5: id assigned to anchor already in use: in-use', Hash
+    end
+  end
 end

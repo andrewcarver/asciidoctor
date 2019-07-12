@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 module Asciidoctor
-  VERSION = '1.5.8.dev'
+  VERSION = '2.0.11.dev'
 end

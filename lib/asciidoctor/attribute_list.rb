@@ -1,40 +1,41 @@
-# encoding: UTF-8
+# frozen_string_literal: true
 module Asciidoctor
 # Public: Handles parsing AsciiDoc attribute lists into a Hash of key/value
 # pairs. By default, attributes must each be separated by a comma and quotes
 # may be used around the value. If a key is not detected, the value is assigned
 # to a 1-based positional key, The positional attributes can be "rekeyed" when
-# given a posattrs array either during parsing or after the fact.
+# given a positional_attrs array either during parsing or after the fact.
 #
 # Examples
 #
 #    attrlist = Asciidoctor::AttributeList.new('astyle')
 #
 #    attrlist.parse
-#    => {0 => 'astyle'}
+#    => { 0 => 'astyle' }
 #
 #    attrlist.rekey(['style'])
-#    => {'style' => 'astyle'}
+#    => { 'style' => 'astyle' }
 #
 #    attrlist = Asciidoctor::AttributeList.new('quote, Famous Person, Famous Book (2001)')
 #
 #    attrlist.parse(['style', 'attribution', 'citetitle'])
-#    => {'style' => 'quote', 'attribution' => 'Famous Person', 'citetitle' => 'Famous Book (2001)'}
+#    => { 'style' => 'quote', 'attribution' => 'Famous Person', 'citetitle' => 'Famous Book (2001)' }
 #
 class AttributeList
   BACKSLASH = '\\'
+  APOS = '\''
 
   # Public: Regular expressions for detecting the boundary of a value
   BoundaryRxs = {
     '"' => /.*?[^\\](?=")/,
-    '\'' => /.*?[^\\](?=')/,
+    APOS => /.*?[^\\](?=')/,
     ',' => /.*?(?=[ \t]*(,|$))/
   }
 
   # Public: Regular expressions for unescaping quoted characters
   EscapedQuotes = {
     '"' => '\\"',
-    '\'' => '\\\''
+    APOS => '\\\''
   }
 
   # Public: A regular expression for an attribute name (approx. name token from XML)
@@ -43,11 +44,8 @@ class AttributeList
 
   BlankRx = /[ \t]+/
 
-  # Public: Regular expressions for skipping blanks and delimiters
-  SkipRxs = {
-    :blank => BlankRx,
-    ',' => /[ \t]*(,|$)/
-  }
+  # Public: Regular expressions for skipping delimiters
+  SkipRxs = { ',' => /[ \t]*(,|$)/ }
 
   def initialize source, block = nil, delimiter = ','
     @scanner = ::StringScanner.new source
@@ -58,11 +56,11 @@ class AttributeList
     @attributes = nil
   end
 
-  def parse_into attributes, posattrs = []
-    attributes.update(parse posattrs)
+  def parse_into attributes, positional_attrs = []
+    attributes.update parse positional_attrs
   end
 
-  def parse posattrs = []
+  def parse positional_attrs = []
     # return if already parsed
     return @attributes if @attributes
 
@@ -71,7 +69,7 @@ class AttributeList
     #attributes[0] = @scanner.string
     index = 0
 
-    while parse_attribute index, posattrs
+    while parse_attribute index, positional_attrs
       break if @scanner.eos?
       skip_delimiter
       index += 1
@@ -80,24 +78,25 @@ class AttributeList
     @attributes
   end
 
-  def rekey posattrs
-    AttributeList.rekey @attributes, posattrs
+  def rekey positional_attrs
+    AttributeList.rekey @attributes, positional_attrs
   end
 
-  def self.rekey attributes, pos_attrs
-    pos_attrs.each_with_index do |key, index|
-      next unless key
-      pos = index + 1
-      if (val = attributes[pos])
+  def self.rekey attributes, positional_attrs
+    index = 0
+    positional_attrs.each do |key|
+      index += 1
+      if (val = attributes[index])
         # QUESTION should we delete the positional key?
         attributes[key] = val
-      end
+      end if key
     end
-
     attributes
   end
 
-  def parse_attribute index = 0, pos_attrs = []
+  private
+
+  def parse_attribute index = 0, positional_attrs = []
     single_quoted_value = false
     skip_blank
     # example: "quote"
@@ -105,10 +104,10 @@ class AttributeList
       name = parse_attribute_value @scanner.get_byte
       value = nil
     # example: 'quote'
-    elsif first == '\''
+    elsif first == APOS
       name = parse_attribute_value @scanner.get_byte
       value = nil
-      single_quoted_value = true
+      single_quoted_value = true unless name.start_with? APOS
     else
       name = scan_name
 
@@ -135,12 +134,12 @@ class AttributeList
           if (c = @scanner.get_byte) == '"'
             value = parse_attribute_value c
           # example: foo='bar' || foo='ba\'zaar' || foo='ba"zaar'
-          elsif c == '\''
+          elsif c == APOS
             value = parse_attribute_value c
-            single_quoted_value = true
+            single_quoted_value = true unless value.start_with? APOS
           # example: foo=,
           elsif c == @delimiter
-            value = nil
+            value = ''
           # example: foo=bar (all spaces ignored)
           else
             value = %(#{c}#{scan_to_delimiter})
@@ -159,9 +158,8 @@ class AttributeList
           value = value.delete ' ' if value.include? ' '
           (value.split ',').each {|opt| @attributes[%(#{opt}-option)] = '' unless opt.empty? }
         else
-          @attributes[%(#{value = value.strip}-option)] = ''
+          @attributes[%(#{value}-option)] = '' unless value.empty?
         end
-        @attributes['options'] = value
       else
         if single_quoted_value && @block
           case name
@@ -176,8 +174,8 @@ class AttributeList
       end
     else
       resolved_name = single_quoted_value && @block ? (@block.apply_subs name) : name
-      if (pos_name = pos_attrs[index])
-        @attributes[pos_name] = resolved_name
+      if (positional_attr_name = positional_attrs[index])
+        @attributes[positional_attr_name] = resolved_name
       end
       # QUESTION should we always assign the positional key?
       @attributes[index + 1] = resolved_name
@@ -226,6 +224,5 @@ class AttributeList
   def scan_to_quote quote
     @scanner.scan BoundaryRxs[quote]
   end
-
 end
 end

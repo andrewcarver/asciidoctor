@@ -1,7 +1,6 @@
-# NOTE .to_s hides require from Opal
-require 'asciidoctor'.to_s unless defined? Asciidoctor
+# frozen_string_literal: true
+(require 'asciidoctor' unless defined? Asciidoctor.load) unless RUBY_ENGINE == 'opal'
 
-# encoding: UTF-8
 module Asciidoctor
 # Extensions provide a way to participate in the parsing and converting
 # phases of the AsciiDoc processor or extend the AsciiDoc syntax.
@@ -57,27 +56,23 @@ module Extensions
         config[key] = default_value
       end
 
-      # Include the DSL class for this processor into this processor class or instance.
+      # Mixes the DSL class for this processor into this processor class or instance.
       #
-      # This method automatically detects whether to use the include or extend keyword
-      # based on what is appropriate.
+      # This method automatically detects whether to use the include or extend keyword to mix in the module.
       #
       # NOTE Inspiration for this DSL design comes from https://corcoran.io/2013/09/04/simple-pattern-ruby-dsl/
       #
-      # Returns nothing
-      def use_dsl
-        if self.name.nil_or_empty?
-          # NOTE contants(false) doesn't exist in Ruby 1.8.7
-          #include const_get :DSL if constants(false).grep :DSL
-          include const_get :DSL if constants.grep :DSL
-        else
-          # NOTE contants(false) doesn't exist in Ruby 1.8.7
-          #extend const_get :DSL if constants(false).grep :DSL
-          extend const_get :DSL if constants.grep :DSL
+      # Returns self
+      def enable_dsl
+        if const_defined? :DSL
+          if singleton_class?
+            include const_get :DSL
+          else
+            extend const_get :DSL
+          end
         end
       end
-      alias extend_dsl use_dsl
-      alias include_dsl use_dsl
+      alias use_dsl enable_dsl
     end
 
     # Public: Get the configuration Hash for this processor instance.
@@ -92,7 +87,7 @@ module Extensions
     end
 
     def process *args
-      raise ::NotImplementedError, %(Asciidoctor::Extensions::Processor subclass must implement ##{__method__} method)
+      raise ::NotImplementedError, %(#{Processor} subclass #{self.class} must implement the ##{__method__} method)
     end
 
     # QUESTION should attributes be an option instead of a parameter?
@@ -148,7 +143,9 @@ module Extensions
       else
         sect.numbered = true if opts.fetch :numbered, (book && (doc.attr? 'partnums'))
       end
-      unless (id = attrs.delete 'id') == false
+      if (id = attrs['id']) == false
+        attrs.delete 'id'
+      else
         sect.id = attrs['id'] = id || ((doc.attr? 'sectids') ? (Section.generate_id sect.title, doc) : nil)
       end
       sect.update_attributes attrs
@@ -156,7 +153,30 @@ module Extensions
     end
 
     def create_block parent, context, source, attrs, opts = {}
-      Block.new parent, context, { :source => source, :attributes => attrs }.merge(opts)
+      Block.new parent, context, { source: source, attributes: attrs }.merge(opts)
+    end
+
+    # Public: Creates a list node and links it to the specified parent.
+    #
+    # parent - The parent Block (Block, Section, or Document) of this new list block.
+    # context - The list context (e.g., :ulist, :olist, :colist, :dlist)
+    # attrs  - A Hash of attributes to set on this list block
+    #
+    # Returns a [List] node with all properties properly initialized.
+    def create_list parent, context, attrs = nil
+      list = List.new parent, context
+      list.update_attributes attrs if attrs
+      list
+    end
+
+    # Public: Creates a list item node and links it to the specified parent.
+    #
+    # parent - The parent List of this new list item block.
+    # text   - The text of the list item.
+    #
+    # Returns a [ListItem] node with all properties properly initialized.
+    def create_list_item parent, text = nil
+      ListItem.new parent, text
     end
 
     # Public: Creates an image block node and links it to the specified parent.
@@ -173,11 +193,17 @@ module Extensions
         raise ::ArgumentError, 'Unable to create an image block, target attribute is required'
       end
       attrs['alt'] ||= (attrs['default-alt'] = Helpers.basename(target, true).tr('_-', ' '))
-      create_block parent, :image, nil, attrs, opts
+      title = (attrs.key? 'title') ? (attrs.delete 'title') : nil
+      block = create_block parent, :image, nil, attrs, opts
+      if title
+        block.title = title
+        block.assign_caption (attrs.delete 'caption'), 'figure'
+      end
+      block
     end
 
     def create_inline parent, context, text, opts = {}
-      Inline.new parent, context, text, opts
+      Inline.new parent, context, text, context == :quoted ? ({ type: :unquoted }.merge opts) : opts
     end
 
     # Public: Parses blocks in the content and attaches the block to the parent.
@@ -187,10 +213,23 @@ module Extensions
     # QUESTION is parse_content the right method name? should we wrap in open block automatically?
     def parse_content parent, content, attributes = nil
       reader = Reader === content ? content : (Reader.new content)
-      while ((block = Parser.next_block reader, parent, (attributes ? attributes.dup : {})) && parent << block) ||
-          reader.has_more_lines?
-      end
+      Parser.parse_blocks reader, parent, attributes
       parent
+    end
+
+    # Public: Parses the attrlist String into a Hash of attributes
+    #
+    # block    - the current AbstractBlock or the parent AbstractBlock if there is no current block (used for applying subs)
+    # attrlist - the list of attributes as a String
+    # opts     - an optional Hash of options to control processing:
+    #            :positional_attributes - an Array of attribute names to map positional arguments to (optional, default: false)
+    #            :sub_attributes - enables attribute substitution on the attrlist argument (optional, default: false)
+    #
+    # Returns a Hash of parsed attributes
+    def parse_attributes block, attrlist, opts = {}
+      return {} if attrlist ? attrlist.empty? : true
+      attrlist = block.sub_attributes attrlist if opts[:sub_attributes] && (attrlist.include? ATTR_REF_HEAD)
+      (AttributeList.new attrlist).parse (opts[:positional_attributes] || [])
     end
 
     # TODO fill out remaining methods
@@ -201,7 +240,8 @@ module Extensions
       [:create_pass_block,    :create_block,  :pass],
       [:create_listing_block, :create_block,  :listing],
       [:create_literal_block, :create_block,  :literal],
-      [:create_anchor,        :create_inline, :anchor]
+      [:create_anchor,        :create_inline, :anchor],
+      [:create_inline_pass,   :create_inline, :quoted],
     ].each do |method_name, delegate_method_name, context|
       define_method method_name do |*args|
         args.unshift args.shift, context
@@ -221,20 +261,20 @@ module Extensions
     def process *args, &block
       if block_given?
         raise ::ArgumentError, %(wrong number of arguments (given #{args.size}, expected 0)) unless args.empty?
+        unless block.binding && self == block.binding.receiver
+          # NOTE remap self in process method to processor instance
+          context = self
+          block.define_singleton_method(:call) {|*m_args| context.instance_exec(*m_args, &block) }
+        end
         @process_block = block
       # TODO enable if we want to support passing proc or lambda as argument instead of block
       #elsif ::Proc === args[0]
-      #  block = args.shift
-      #  raise ::ArgumentError, %(wrong number of arguments (given #{args.size}, expected 0)) unless args.empty?
-      #  @process_block = block
+      #  raise ::ArgumentError, %(wrong number of arguments (given #{args.size - 1}, expected 0)) unless args.size == 1
+      #  @process_block = args.shift
       elsif defined? @process_block
-        # NOTE Proc automatically expands a single array argument
-        # ...but lambda doesn't (and we want to accept lambdas too)
-        # TODO need a test for this!
         @process_block.call(*args)
       else
-        # TODO add exception message here
-        raise ::NotImplementedError
+        raise ::NotImplementedError, %(#{self.class} ##{__method__} method called before being registered)
       end
     end
 
@@ -243,7 +283,15 @@ module Extensions
     end
   end
 
-  module SyntaxDsl
+  module DocumentProcessorDsl
+    include ProcessorDsl
+
+    def prefer
+      option :position, :>>
+    end
+  end
+
+  module SyntaxProcessorDsl
     include ProcessorDsl
 
     def named value
@@ -254,75 +302,73 @@ module Extensions
         option :name, value
       end
     end
-    # NOTE match_name may get deprecated
-    alias match_name named
 
     def content_model value
       option :content_model, value
     end
     alias parse_content_as content_model
-    alias parses_content_as content_model
-    #alias parse_as content_model
-    #alias parsed_as content_model
 
-    def positional_attrs *value
-      option :pos_attrs, value.flatten
+    def positional_attributes *value
+      option :positional_attrs, value.flatten
     end
-    alias name_attributes positional_attrs
-    alias name_positional_attributes positional_attrs
+    alias name_positional_attributes positional_attributes
+    # NOTE positional_attrs alias is deprecated
+    alias positional_attrs positional_attributes
 
-    def default_attrs value
+    def default_attributes value
       option :default_attrs, value
     end
+    # NOTE default_attrs alias is deprecated
+    alias default_attrs default_attributes
 
-    def resolves_attributes *args
+    def resolve_attributes *args
       # NOTE assume true as default value; rewrap single-argument string or symbol
       if (args = args.fetch 0, true).respond_to? :to_sym
         args = [args]
       end unless args.size > 1
       case args
       when true
-        option :pos_attrs, []
+        option :positional_attrs, []
         option :default_attrs, {}
       when ::Array
         names, defaults = [], {}
         args.each do |arg|
           if (arg = arg.to_s).include? '='
-            name, value = arg.split '=', 2
+            name, _, value = arg.partition '='
             if name.include? ':'
-              idx, name = name.split ':', 2
+              idx, _, name = name.partition ':'
               idx = idx == '@' ? names.size : idx.to_i
               names[idx] = name
             end
             defaults[name] = value
           elsif arg.include? ':'
-            idx, name = arg.split ':', 2
+            idx, _, name = arg.partition ':'
             idx = idx == '@' ? names.size : idx.to_i
             names[idx] = name
           else
             names << arg
           end
         end
-        option :pos_attrs, names.compact
+        option :positional_attrs, names.compact
         option :default_attrs, defaults
       when ::Hash
         names, defaults = [], {}
         args.each do |key, val|
           if (name = key.to_s).include? ':'
-            idx, name = name.split ':', 2
+            idx, _, name = name.partition ':'
             idx = idx == '@' ? names.size : idx.to_i
             names[idx] = name
           end
           defaults[name] = val if val
         end
-        option :pos_attrs, names.compact
+        option :positional_attrs, names.compact
         option :default_attrs, defaults
       else
         raise ::ArgumentError, %(unsupported attributes specification for macro: #{args.inspect})
       end
     end
-    # NOTE we may decide to drop this alias
-    alias resolve_attributes resolves_attributes
+    # NOTE resolves_attributes alias is deprecated
+    alias resolves_attributes resolve_attributes
   end
 
   # Public: Preprocessors are run after the source text is split into lines and
@@ -340,10 +386,10 @@ module Extensions
   # Preprocessor implementations must extend the Preprocessor class.
   class Preprocessor < Processor
     def process document, reader
-      raise ::NotImplementedError, %(Asciidoctor::Extensions::Preprocessor subclass must implement ##{__method__} method)
+      raise ::NotImplementedError, %(#{Preprocessor} subclass #{self.class} must implement the ##{__method__} method)
     end
   end
-  Preprocessor::DSL = ProcessorDsl
+  Preprocessor::DSL = DocumentProcessorDsl
 
   # Public: TreeProcessors are run on the Document after the source has been
   # parsed into an abstract syntax tree (AST), as represented by the Document
@@ -357,10 +403,10 @@ module Extensions
   # QUESTION should the tree processor get invoked after parse header too?
   class TreeProcessor < Processor
     def process document
-      raise ::NotImplementedError, %(Asciidoctor::Extensions::TreeProcessor subclass must implement ##{__method__} method)
+      raise ::NotImplementedError, %(#{TreeProcessor} subclass #{self.class} must implement the ##{__method__} method)
     end
   end
-  TreeProcessor::DSL = ProcessorDsl
+  TreeProcessor::DSL = DocumentProcessorDsl
 
   # Alias deprecated class name for backwards compatibility
   Treeprocessor = TreeProcessor
@@ -382,10 +428,10 @@ module Extensions
   # Postprocessor implementations must Postprocessor.
   class Postprocessor < Processor
     def process document, output
-      raise ::NotImplementedError, %(Asciidoctor::Extensions::Postprocessor subclass must implement ##{__method__} method)
+      raise ::NotImplementedError, %(#{Postprocessor} subclass #{self.class} must implement the ##{__method__} method)
     end
   end
-  Postprocessor::DSL = ProcessorDsl
+  Postprocessor::DSL = DocumentProcessorDsl
 
   # Public: IncludeProcessors are used to process `include::<target>[]`
   # directives in the source document.
@@ -400,7 +446,7 @@ module Extensions
   # TODO add file extension or regexp as shortcut for handles? method
   class IncludeProcessor < Processor
     def process document, reader, target, attributes
-      raise ::NotImplementedError, %(Asciidoctor::Extensions::IncludeProcessor subclass must implement ##{__method__} method)
+      raise ::NotImplementedError, %(#{IncludeProcessor} subclass #{self.class} must implement the ##{__method__} method)
     end
 
     def handles? target
@@ -409,7 +455,7 @@ module Extensions
   end
 
   module IncludeProcessorDsl
-    include ProcessorDsl
+    include DocumentProcessorDsl
 
     def handles? *args, &block
       if block_given?
@@ -438,20 +484,18 @@ module Extensions
   # If a location is not specified, the DocinfoProcessor is assumed
   # to add content to the header.
   class DocinfoProcessor < Processor
-    attr_accessor :location
-
     def initialize config = {}
       super config
       @config[:location] ||= :head
     end
 
     def process document
-      raise ::NotImplementedError, %(Asciidoctor::Extensions::DocinfoProcessor subclass must implement ##{__method__} method)
+      raise ::NotImplementedError, %(#{DocinfoProcessor} subclass #{self.class} must implement the ##{__method__} method)
     end
   end
 
   module DocinfoProcessorDsl
-    include ProcessorDsl
+    include DocumentProcessorDsl
 
     def at_location value
       option :location, value
@@ -477,7 +521,7 @@ module Extensions
   # * :named - The name of the block (required: true)
   # * :contexts - The blocks contexts on which this style can be used (default: [:paragraph, :open]
   # * :content_model - The structure of the content supported in this block (default: :compound)
-  # * :pos_attrs - A list of attribute names used to map positional attributes (default: nil)
+  # * :positional_attrs - A list of attribute names used to map positional attributes (default: nil)
   # * :default_attrs - A hash of attribute names and values used to seed the attributes hash (default: nil)
   # * ...
   #
@@ -502,19 +546,19 @@ module Extensions
     end
 
     def process parent, reader, attributes
-      raise ::NotImplementedError, %(Asciidoctor::Extensions::BlockProcessor subclass must implement ##{__method__} method)
+      raise ::NotImplementedError, %(#{BlockProcessor} subclass #{self.class} must implement the ##{__method__} method)
     end
   end
 
   module BlockProcessorDsl
-    include SyntaxDsl
+    include SyntaxProcessorDsl
 
     def contexts *value
       option :contexts, value.flatten.to_set
     end
     alias on_contexts contexts
     alias on_context contexts
-    alias bound_to contexts
+    alias bind_to contexts
   end
   BlockProcessor::DSL = BlockProcessorDsl
 
@@ -528,23 +572,23 @@ module Extensions
     end
 
     def process parent, target, attributes
-      raise ::NotImplementedError, %(Asciidoctor::Extensions::MacroProcessor subclass must implement ##{__method__} method)
+      raise ::NotImplementedError, %(#{MacroProcessor} subclass #{self.class} must implement the ##{__method__} method)
     end
   end
 
   module MacroProcessorDsl
-    include SyntaxDsl
+    include SyntaxProcessorDsl
 
-    def resolves_attributes *args
+    def resolve_attributes *args
       if args.size == 1 && !args[0]
         option :content_model, :text
-        return
+      else
+        super
+        option :content_model, :attributes
       end
-      super
-      option :content_model, :attributes
     end
-    # NOTE we may decide to drop this alias
-    alias resolve_attributes resolves_attributes
+    # NOTE resolves_attributes alias is deprecated
+    alias resolves_attributes resolve_attributes
   end
 
   # Public: BlockMacroProcessors are used to handle block macros that have a
@@ -552,6 +596,10 @@ module Extensions
   #
   # BlockMacroProcessor implementations must extend BlockMacroProcessor.
   class BlockMacroProcessor < MacroProcessor
+    def name
+      raise ::ArgumentError, %(invalid name for block macro: #{@name}) unless MacroNameRx.match? @name.to_s
+      @name
+    end
   end
   BlockMacroProcessor::DSL = MacroProcessorDsl
 
@@ -574,23 +622,23 @@ module Extensions
 
     def resolve_regexp name, format
       raise ::ArgumentError, %(invalid name for inline macro: #{name}) unless MacroNameRx.match? name
-      @@rx_cache[[name, format]] ||= /\\?#{name}:#{format == :short ? '(){0}' : '(\S+?)'}\[(|.*?[^\\])\]/
+      @@rx_cache[[name, format]] ||= /\\?#{name}:#{format == :short ? '(){0}' : '(\S+?)'}\[(|#{CC_ANY}*?[^\\])\]/
     end
   end
 
   module InlineMacroProcessorDsl
     include MacroProcessorDsl
 
-    def with_format value
+    def format value
       option :format, value
     end
-    alias using_format with_format
+    alias match_format format
+    # NOTE using_format alias is deprecated
+    alias using_format format
 
-    def matches value
+    def match value
       option :regexp, value
     end
-    alias match matches
-    alias matching matches
   end
   InlineMacroProcessor::DSL = InlineMacroProcessorDsl
 
@@ -924,7 +972,7 @@ module Extensions
     #   docinfo_processor MetaRobotsDocinfoProcessor
     #
     #   # as an instance of a DocinfoProcessor subclass with an explicit location
-    #   docinfo_processor JQueryDocinfoProcessor.new, :location => :footer
+    #   docinfo_processor JQueryDocinfoProcessor.new, location: :footer
     #
     #   # as a name of a DocinfoProcessor subclass
     #   docinfo_processor 'MetaRobotsDocinfoProcessor'
@@ -1253,35 +1301,52 @@ module Extensions
       @inline_macro_extensions.values
     end
 
+    # Public: Inserts the document processor {Extension} instance as the first
+    # processor of its kind in the extension registry.
+    #
+    # Examples
+    #
+    #   prefer :include_processor do
+    #     process do |document, reader, target, attrs|
+    #       ...
+    #     end
+    #   end
+    #
+    # Returns the [Extension] stored in the registry that proxies the instance
+    # of this processor.
+    def prefer *args, &block
+      extension = ProcessorExtension === (arg0 = args.shift) ? arg0 : (send arg0, *args, &block)
+      extensions_store = instance_variable_get(%(@#{extension.kind}_extensions).to_sym)
+      extensions_store.unshift extensions_store.delete extension
+      extension
+    end
+
     private
 
     def add_document_processor kind, args, &block
       kind_name = kind.to_s.tr '_', ' '
       kind_class_symbol = kind_name.split.map {|it| it.capitalize }.join.to_sym
-      kind_class = Extensions.const_get kind_class_symbol
-      kind_java_class = (defined? ::AsciidoctorJ) ? (::AsciidoctorJ::Extensions.const_get kind_class_symbol) : nil
+      kind_class = Extensions.const_get kind_class_symbol, false
+      kind_java_class = (defined? ::AsciidoctorJ) ? (::AsciidoctorJ::Extensions.const_get kind_class_symbol, false) : nil
       kind_store = instance_variable_get(%(@#{kind}_extensions).to_sym) || instance_variable_set(%(@#{kind}_extensions).to_sym, [])
       # style 1: specified as block
       extension = if block_given?
         config = resolve_args args, 1
-        # TODO if block arity is 0, assume block is process method
-        processor = kind_class.new config
-        # NOTE class << processor idiom doesn't work in Opal
-        #class << processor
-        #  include_dsl
-        #end
-        # NOTE kind_class.contants(false) doesn't exist in Ruby 1.8.7
-        processor.extend kind_class.const_get :DSL if kind_class.constants.grep :DSL
-        processor.instance_exec(&block)
-        processor.freeze
+        (processor = kind_class.new config).singleton_class.enable_dsl
+        if block.arity == 0
+          processor.instance_exec(&block)
+        else
+          yield processor
+        end
         unless processor.process_block_given?
           raise ::ArgumentError, %(No block specified to process #{kind_name} extension at #{block.source_location})
         end
+        processor.freeze
         ProcessorExtension.new kind, processor
       else
         processor, config = resolve_args args, 2
         # style 2: specified as Class or String class name
-        if (processor_class = Extensions.resolve_class processor)
+        if (processor_class = Helpers.resolve_class processor)
           unless processor_class < kind_class || (kind_java_class && processor_class < kind_java_class)
             raise ::ArgumentError, %(Invalid type for #{kind_name} extension: #{processor})
           end
@@ -1298,33 +1363,24 @@ module Extensions
         end
       end
 
-      if extension.config[:position] == :>>
-        kind_store.unshift extension
-      else
-        kind_store << extension
-      end
+      extension.config[:position] == :>> ? (kind_store.unshift extension) : (kind_store << extension)
+      extension
     end
 
     def add_syntax_processor kind, args, &block
       kind_name = kind.to_s.tr '_', ' '
-      kind_class_symbol = (kind_name.split.map {|it| it.capitalize }.push 'Processor').join.to_sym
-      kind_class = Extensions.const_get kind_class_symbol
-      kind_java_class = (defined? ::AsciidoctorJ) ? (::AsciidoctorJ::Extensions.const_get kind_class_symbol) : nil
+      kind_class_symbol = (kind_name.split.map {|it| it.capitalize } << 'Processor').join.to_sym
+      kind_class = Extensions.const_get kind_class_symbol, false
+      kind_java_class = (defined? ::AsciidoctorJ) ? (::AsciidoctorJ::Extensions.const_get kind_class_symbol, false) : nil
       kind_store = instance_variable_get(%(@#{kind}_extensions).to_sym) || instance_variable_set(%(@#{kind}_extensions).to_sym, {})
       # style 1: specified as block
       if block_given?
         name, config = resolve_args args, 2
-        processor = kind_class.new as_symbol(name), config
-        # NOTE class << processor idiom doesn't work in Opal
-        #class << processor
-        #  include_dsl
-        #end
-        # NOTE kind_class.contants(false) doesn't exist in Ruby 1.8.7
-        processor.extend kind_class.const_get :DSL if kind_class.constants.grep :DSL
-        if block.arity == 1
-          yield processor
-        else
+        (processor = kind_class.new (as_symbol name), config).singleton_class.enable_dsl
+        if block.arity == 0
           processor.instance_exec(&block)
+        else
+          yield processor
         end
         unless (name = as_symbol processor.name)
           raise ::ArgumentError, %(No name specified for #{kind_name} extension at #{block.source_location})
@@ -1337,7 +1393,7 @@ module Extensions
       else
         processor, name, config = resolve_args args, 3
         # style 2: specified as Class or String class name
-        if (processor_class = Extensions.resolve_class processor)
+        if (processor_class = Helpers.resolve_class processor)
           unless processor_class < kind_class || (kind_java_class && processor_class < kind_java_class)
             raise ::ArgumentError, %(Class specified for #{kind_name} extension does not inherit from #{kind_class}: #{processor})
           end
@@ -1395,13 +1451,11 @@ module Extensions
 
     def create name = nil, &block
       if block_given?
-        Registry.new({ (name || generate_name) => block })
+        Registry.new (name || generate_name) => block
       else
         Registry.new
       end
     end
-    # Deprecated: Use create instead of build_registry
-    alias build_registry create
 
     # Public: Registers an extension Group that subsequently registers a
     # collection of extensions.
@@ -1443,7 +1497,7 @@ module Extensions
         resolved_group = block
       elsif (group = args.pop)
         # QUESTION should we instantiate the group class here or defer until activation??
-        resolved_group = (resolve_class group) || group
+        resolved_group = (Helpers.resolve_class group) || group
       else
         raise ::ArgumentError, %(Extension group to register not specified)
       end
@@ -1470,55 +1524,6 @@ module Extensions
     def unregister *names
       names.each {|group| @groups.delete group.to_sym }
       nil
-    end
-
-    # Internal: Resolve the specified object as a Class
-    #
-    # object - The object to resolve as a Class
-    #
-    # Returns a Class if the specified object is a Class (but not a Module) or
-    # a String that resolves to a Class; otherwise, nil
-    def resolve_class object
-      case object
-      when ::Class
-        object
-      when ::String
-        class_for_name object
-      end
-    end
-
-    # Public: Resolves the Class object for the qualified name.
-    #
-    # Returns Class
-    if ::RUBY_MIN_VERSION_2
-      def class_for_name qualified_name
-        resolved = ::Object.const_get qualified_name, false
-        raise unless ::Class === resolved
-        resolved
-      rescue
-        raise ::NameError, %(Could not resolve class for name: #{qualified_name})
-      end
-    elsif ::RUBY_MIN_VERSION_1_9
-      def class_for_name qualified_name
-        resolved = (qualified_name.split '::').reduce ::Object do |current, name|
-          name.empty? ? current : (current.const_get name, false)
-        end
-        raise unless ::Class === resolved
-        resolved
-      rescue
-        raise ::NameError, %(Could not resolve class for name: #{qualified_name})
-      end
-    else
-      def class_for_name qualified_name
-        resolved = (qualified_name.split '::').reduce ::Object do |current, name|
-          # NOTE on Ruby 1.8, const_defined? only checks for constant in current scope
-          name.empty? ? current : ((current.const_defined? name) ? (current.const_get name) : raise)
-        end
-        raise unless ::Class === resolved
-        resolved
-      rescue
-        raise ::NameError, %(Could not resolve class for name: #{qualified_name})
-      end
     end
   end
 end
