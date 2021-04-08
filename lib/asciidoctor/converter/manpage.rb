@@ -2,8 +2,12 @@
 module Asciidoctor
 # A built-in {Converter} implementation that generates the man page (troff) format.
 #
-# The output follows the groff man page definition while also trying to be
-# consistent with the output produced by the a2x tool from AsciiDoc Python.
+# The output of this converter adheres to the man definition as defined by
+# groff and uses the manpage output of the DocBook toolchain as a foundation.
+# That means if you've previously been generating man pages using the a2x tool
+# from AsciiDoc Python, you should be able to achieve a very similar result
+# using this converter. Though you'll also get to enjoy some notable
+# enhancements that have been added since, such as the customizable linkstyle.
 #
 # See http://www.gnu.org/software/groff/manual/html_node/Man-usage.html#Man-usage
 class Converter::ManPageConverter < Converter::Base
@@ -15,9 +19,10 @@ class Converter::ManPageConverter < Converter::Base
   ESC_BS = %(#{ESC}\\) # escaped backslash (indicates troff formatting sequence)
   ESC_FS = %(#{ESC}.)  # escaped full stop (indicates troff macro)
 
-  LiteralBackslashRx = /(?:\A|[^#{ESC}])\\/
+  LiteralBackslashRx = /\A\\|(#{ESC})?\\/
   LeadingPeriodRx = /^\./
   EscapedMacroRx = /^(?:#{ESC}\\c\n)?#{ESC}\.((?:URL|MTO) "#{CC_ANY}*?" "#{CC_ANY}*?" )( |[^\s]*)(#{CC_ANY}*?)(?: *#{ESC}\\c)?$/
+  MalformedEscapedMacroRx = /(#{ESC}\\c) (#{ESC}\.(?:URL|MTO) )/
   MockBoundaryRx = /<\/?BOUNDARY>/
   EmDashCharRefRx = /&#8212;(?:&#8203;)?/
   EllipsisCharRefRx = /&#8230;(?:&#8203;)?/
@@ -91,17 +96,14 @@ class Converter::ManPageConverter < Converter::Base
       if node.attr? 'manpurpose'
         mannames = node.attr 'mannames', [manname]
         result << %(.SH "#{(node.attr 'manname-title', 'NAME').upcase}"
-#{mannames.map {|n| manify n }.join ', '} \\- #{manify node.attr('manpurpose'), whitespace: :normalize})
+#{mannames.map {|n| (manify n).gsub '\-', '-' }.join ', '} \\- #{manify node.attr('manpurpose'), whitespace: :normalize})
       end
     end
 
     result << node.content
 
     # QUESTION should NOTES come after AUTHOR(S)?
-    if node.footnotes? && !(node.attr? 'nofootnotes')
-      result << '.SH "NOTES"'
-      result.concat(node.footnotes.map {|fn| %(#{fn.index}. #{fn.text}) })
-    end
+    append_footnotes result, node
 
     unless (authors = node.authors).empty?
       if authors.size > 1
@@ -124,10 +126,7 @@ class Converter::ManPageConverter < Converter::Base
   def convert_embedded node
     result = [node.content]
 
-    if node.footnotes? && !(node.attr? 'nofootnotes')
-      result << '.SH "NOTES"'
-      result.concat(node.footnotes.map {|fn| %(#{fn.index}. #{fn.text}) })
-    end
+    append_footnotes result, node
 
     # QUESTION should we add an AUTHOR(S) section?
 
@@ -247,7 +246,9 @@ r lw(\n(.lu*75u/100u).'
     result << %(.sp
 .if n .RS 4
 .nf
+.fam C
 #{manify node.content, whitespace: :preserve}
+.fam
 .fi
 .if n .RE)
     result.join LF
@@ -261,7 +262,9 @@ r lw(\n(.lu*75u/100u).'
     result << %(.sp
 .if n .RS 4
 .nf
+.fam C
 #{manify node.content, whitespace: :preserve}
+.fam
 .fi
 .if n .RE)
     result.join LF
@@ -284,15 +287,16 @@ r lw(\n(.lu*75u/100u).'
 .B #{manify node.title}
 .br) if node.title?
 
+    start = (node.attr 'start', 1).to_i
     node.items.each_with_index do |item, idx|
       result << %(.sp
 .RS 4
 .ie n \\{\\
-\\h'-04' #{idx + 1}.\\h'+01'\\c
+\\h'-04' #{numeral = idx + start}.\\h'+01'\\c
 .\\}
 .el \\{\\
 .  sp -1
-.  IP " #{idx + 1}." 4.2
+.  IP " #{numeral}." 4.2
 .\\}
 #{manify item.text, whitespace: :normalize})
       result << item.content if item.blocks?
@@ -310,8 +314,9 @@ r lw(\n(.lu*75u/100u).'
     end
   end
 
-  # TODO use Page Control https://www.gnu.org/software/groff/manual/html_node/Page-Control.html#Page-Control
-  alias convert_page_break skip
+  def convert_page_break node
+    '.bp'
+  end
 
   def convert_paragraph node
     if node.title?
@@ -526,12 +531,13 @@ allbox tab(:);'
     result.join LF
   end
 
-  # FIXME git uses [verse] for the synopsis; detect this special case
   def convert_verse node
     result = []
-    result << (node.title? ? %(.sp
+    if node.title?
+      result << %(.sp
 .B #{manify node.title}
-.br) : '.sp')
+.br)
+    end
     attribution_line = (node.attr? 'citetitle') ? %(#{node.attr 'citetitle'} ) : nil
     attribution_line = (node.attr? 'attribution') ? %[#{attribution_line}\\(em #{node.attr 'attribution'}] : nil
     result << %(.sp
@@ -580,11 +586,7 @@ allbox tab(:);'
     when :xref
       unless (text = node.text)
         refid = node.attributes['refid']
-        if AbstractNode === (ref = (@refs ||= node.document.catalog[:refs])[refid])
-          text = (ref.xreftext node.attr('xrefstyle', nil, true)) || %([#{refid}])
-        else
-          text = %([#{refid}])
-        end
+        text = %([#{refid}]) unless AbstractNode === (ref = (@refs ||= node.document.catalog[:refs])[refid]) && (@resolving_xref ||= outer = true) && outer && (text = ref.xreftext node.attr 'xrefstyle', nil, true)
       end
       text
     when :ref, :bibref
@@ -608,7 +610,6 @@ allbox tab(:);'
     %(#{ESC_BS}fB(#{node.text})#{ESC_BS}fP)
   end
 
-  # TODO supposedly groff has footnotes, but we're in search of an example
   def convert_inline_footnote node
     if (index = node.attr 'index')
       %([#{index}])
@@ -677,6 +678,22 @@ allbox tab(:);'
 
   private
 
+  def append_footnotes result, node
+    if node.footnotes? && !(node.attr? 'nofootnotes')
+      result << '.SH "NOTES"'
+      node.footnotes.each_with_index do |fn, idx|
+        result << %(.IP [#{fn.index}])
+        # NOTE restore newline in escaped macro that gets removed by normalize_text in substitutor
+        if (text = fn.text).include? %(#{ESC}\\c #{ESC}.)
+          text = (manify %(#{text.gsub MalformedEscapedMacroRx, %(\\1#{LF}\\2)} ), whitespace: :normalize).chomp ' '
+        else
+          text = manify text, whitespace: :normalize
+        end
+        result << text
+      end
+    end
+  end
+
   # Converts HTML entity references back to their original form, escapes
   # special man characters and strips trailing whitespace.
   #
@@ -699,7 +716,8 @@ allbox tab(:);'
       str = str.tr_s WHITESPACE, ' '
     end
     str = str.
-      gsub(LiteralBackslashRx, '\&(rs'). # literal backslash (not a troff escape sequence)
+      gsub(LiteralBackslashRx) { $1 ? $& : '\\(rs' }. # literal backslash (not a troff escape sequence)
+      gsub(EllipsisCharRefRx, '...'). # horizontal ellipsis
       gsub(LeadingPeriodRx, '\\\&.'). # leading . is used in troff for macro call or other formatting; replace with \&.
       # drop orphaned \c escape lines, unescape troff macro, quote adjacent character, isolate macro line
       gsub(EscapedMacroRx) { (rest = $3.lstrip).empty? ? %(.#$1"#$2") : %(.#$1"#$2"#{LF}#{rest}) }.
@@ -717,13 +735,12 @@ allbox tab(:);'
       gsub('&#8217;', '\(cq').  # right single quotation mark
       gsub('&#8220;', '\(lq').  # left double quotation mark
       gsub('&#8221;', '\(rq').  # right double quotation mark
-      gsub(EllipsisCharRefRx, '...'). # horizontal ellipsis
       gsub('&#8592;', '\(<-').  # leftwards arrow
       gsub('&#8594;', '\(->').  # rightwards arrow
       gsub('&#8656;', '\(lA').  # leftwards double arrow
       gsub('&#8658;', '\(rA').  # rightwards double arrow
       gsub('&#8203;', '\:').    # zero width space
-      gsub('&amp;','&').        # literal ampersand (NOTE must take place after any other replacement that includes &)
+      gsub('&amp;', '&').       # literal ampersand (NOTE must take place after any other replacement that includes &)
       gsub('\'', '\(aq').       # apostrophe-quote
       gsub(MockBoundaryRx, ''). # mock boundary
       gsub(ESC_BS, '\\').       # unescape troff backslash (NOTE update if more escapes are added)

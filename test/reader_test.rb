@@ -18,6 +18,11 @@ class ReaderTest < Minitest::Test
         assert_equal SAMPLE_DATA, reader.lines
       end
 
+      test 'should prepare lines from String data with trailing newline' do
+        reader = Asciidoctor::Reader.new SAMPLE_DATA.join(Asciidoctor::LF) + Asciidoctor::LF
+        assert_equal SAMPLE_DATA, reader.lines
+      end
+
       test 'should remove UTF-8 BOM from first line of String data' do
         ['UTF-8', 'ASCII-8BIT'].each do |start_encoding|
           data = String.new %(\xef\xbb\xbf#{SAMPLE_DATA.join ::Asciidoctor::LF}), encoding: start_encoding
@@ -624,6 +629,14 @@ class ReaderTest < Minitest::Test
         assert doc.catalog[:includes]['fixtures/include-file']
       end
 
+      test 'strips BOM from include file' do
+        input = %(:showtitle:\ninclude::fixtures/file-with-utf8-bom.adoc[])
+        output = convert_string_to_embedded input, safe: :safe, base_dir: DIRNAME
+        assert_css '.paragraph', output, 0
+        assert_css 'h1', output, 1
+        assert_match(/<h1>人<\/h1>/, output)
+      end
+
       test 'should not track include in catalog for non-AsciiDoc include files' do
         input = <<~'EOS'
         ----
@@ -730,6 +743,59 @@ class ReaderTest < Minitest::Test
         assert_equal ['last line'], doc.blocks[2].lines
       end
 
+      test 'should only strip trailing newlines, not trailing whitespace, if include file is not AsciiDoc' do
+        input = <<~'EOS'
+        ....
+        include::fixtures/data.tsv[]
+        ....
+        EOS
+
+        doc = document_from_string input, safe: :safe, base_dir: DIRNAME
+        assert_equal 1, doc.blocks.size
+        assert doc.blocks[0].lines[2].end_with? ?\t
+      end
+
+      test 'should fail to read include file if not UTF-8 encoded and encoding is not specified' do
+        input = <<~'EOS'
+        ....
+        include::fixtures/iso-8859-1.txt[]
+        ....
+        EOS
+
+        assert_raises StandardError, 'invalid byte sequence in UTF-8' do
+          doc = document_from_string input, safe: :safe, base_dir: DIRNAME
+          assert_equal 1, doc.blocks.size
+          refute_equal ['Où est l\'hôpital ?'], doc.blocks[0].lines
+          doc.convert
+        end
+      end
+
+      test 'should ignore encoding attribute if value is not an valid encoding' do
+        input = <<~'EOS'
+        ....
+        include::fixtures/encoding.adoc[tag=romé,encoding=iso-1000-1]
+        ....
+        EOS
+
+        doc = document_from_string input, safe: :safe, base_dir: DIRNAME
+        assert_equal 1, doc.blocks.size
+        assert_equal doc.blocks[0].lines[0].encoding, Encoding::UTF_8
+        assert_equal ['Gregory Romé has written an AsciiDoc plugin for the Redmine project management application.'], doc.blocks[0].lines
+      end
+
+      test 'should use encoding specified by encoding attribute when reading include file' do
+        input = <<~'EOS'
+        ....
+        include::fixtures/iso-8859-1.txt[encoding=iso-8859-1]
+        ....
+        EOS
+
+        doc = document_from_string input, safe: :safe, base_dir: DIRNAME
+        assert_equal 1, doc.blocks.size
+        assert_equal doc.blocks[0].lines[0].encoding, Encoding::UTF_8
+        assert_equal ['Où est l\'hôpital ?'], doc.blocks[0].lines
+      end
+
       test 'unresolved target referenced by include directive is skipped when optional option is set' do
         input = <<~'EOS'
         include::fixtures/{no-such-file}[opts=optional]
@@ -788,7 +854,7 @@ class ReaderTest < Minitest::Test
         end
       end
 
-      test 'unreadable file referenced by include directive is replaced by warning' do
+      test 'unreadable file referenced by include directive is replaced by warning', unless: (windows? || Process.euid == 0) do
         include_file = File.join DIRNAME, 'fixtures', 'chapter-a.adoc'
         FileUtils.chmod 0000, include_file
         input = <<~'EOS'
@@ -810,7 +876,7 @@ class ReaderTest < Minitest::Test
         ensure
           FileUtils.chmod 0644, include_file
         end
-      end unless windows?
+      end
 
       # IMPORTANT this test needs to be run on Windows to verify proper behavior in Windows
       test 'can resolve include directive with absolute path' do
@@ -1008,6 +1074,18 @@ class ReaderTest < Minitest::Test
         assert_includes output, 'last line of included content'
       end
 
+      test 'include directive ignores lines attribute with invalid range' do
+        input = <<~'EOS'
+        ++++
+        include::fixtures/include-file.adoc[lines=10..5]
+        ++++
+        EOS
+
+        output = convert_string_to_embedded input, safe: :safe, base_dir: DIRNAME
+        assert_includes output, 'first line of included content'
+        assert_includes output, 'last line of included content'
+      end
+
       test 'include directive supports selecting lines by tag' do
         input = 'include::fixtures/include-file.adoc[tag=snippetA]'
         output = convert_string_to_embedded input, safe: :safe, base_dir: DIRNAME
@@ -1160,6 +1238,31 @@ class ReaderTest < Minitest::Test
         assert_includes output, expected
       end
 
+      test 'should recognize tag wildcard if not at head of list' do
+        input = <<~'EOS'
+        ----
+        include::fixtures/tagged-class.rb[tags=init;**;*;!bark-other]
+        ----
+        EOS
+
+        output = convert_string_to_embedded input, safe: :safe, base_dir: DIRNAME
+        # NOTE cannot use single-quoted heredoc because of https://github.com/jruby/jruby/issues/4260
+        expected = <<~EOS.chop
+        class Dog
+          def initialize breed
+            @breed = breed
+          end
+
+          def bark
+            if @breed == 'beagle'
+              'woof woof woof woof woof'
+            end
+          end
+        end
+        EOS
+        assert_includes output, expected
+      end
+
       test 'include directive selects lines for all tags when value of tags attribute is wildcard' do
         input = <<~'EOS'
         ----
@@ -1211,7 +1314,7 @@ class ReaderTest < Minitest::Test
         assert_includes output, expected
       end
 
-      test 'include directive skips lines all tagged lines when value of tags attribute is negated wildcard' do
+      test 'include directive skips lines all tagged regions when value of tags attribute is negated wildcard' do
         input = <<~'EOS'
         ----
         include::fixtures/tagged-class.rb[tags=!*]
@@ -1220,6 +1323,40 @@ class ReaderTest < Minitest::Test
 
         output = convert_string_to_embedded input, safe: :safe, base_dir: DIRNAME
         expected = %(class Dog\nend)
+        assert_includes output, expected
+      end
+
+      test 'include directive skips lines all tagged regions except ones enabled when value of tags attribute is negated wildcard' do
+        input = <<~'EOS'
+        ----
+        include::fixtures/tagged-class.rb[tags=!*;init]
+        ----
+        EOS
+
+        output = convert_string_to_embedded input, safe: :safe, base_dir: DIRNAME
+        # NOTE cannot use single-quoted heredoc because of https://github.com/jruby/jruby/issues/4260
+        expected = <<~EOS.chop
+        class Dog
+          def initialize breed
+            @breed = breed
+          end
+        end
+        EOS
+        assert_includes output, expected
+      end
+
+      test 'include directive does not include tag that has been included then excluded' do
+        input = <<~'EOS'
+        ----
+        include::fixtures/tagged-class.rb[tags=!*;init;!init]
+        ----
+        EOS
+
+        output = convert_string_to_embedded input, safe: :safe, base_dir: DIRNAME
+        expected = <<~'EOS'.chop
+        class Dog
+        end
+        EOS
         assert_includes output, expected
       end
 

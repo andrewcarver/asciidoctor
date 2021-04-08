@@ -34,6 +34,12 @@ context 'Manpage' do
       assert_equal 'command', doc.attributes['docname']
     end
 
+    test 'should not escape hyphen when printing manname in NAME section' do
+      input = SAMPLE_MANPAGE_HEADER.sub(/^command - /, 'git-describe - ')
+      output = Asciidoctor.convert input, backend: :manpage, standalone: true
+      assert_includes output, %(\n.SH "NAME"\ngit-describe \\- does stuff\n)
+    end
+
     test 'should output multiple mannames in NAME section' do
       input = SAMPLE_MANPAGE_HEADER.sub(/^command - /, 'command, alt_command - ')
       output = Asciidoctor.convert input, backend: :manpage, standalone: true
@@ -140,6 +146,22 @@ context 'Manpage' do
       end
     end
 
+    test 'should break circular reference in section title' do
+      input = <<~EOS.chop
+      #{SAMPLE_MANPAGE_HEADER}
+
+      [#a]
+      == A <<b>>
+
+      [#b]
+      == B <<a>>
+      EOS
+
+      output = Asciidoctor.convert input, backend: :manpage
+      assert_match %r/^\.SH "A B \[A\]"$/, output
+      assert_match %r/^\.SH "B \[A\]"$/, output
+    end
+
     test 'should define default linkstyle' do
       input = SAMPLE_MANPAGE_HEADER
       output = Asciidoctor.convert input, backend: :manpage, standalone: true
@@ -216,6 +238,34 @@ context 'Manpage' do
       assert_equal '\&.if 1 .nx', output.lines[-2].chomp
     end
 
+    test 'should escape ellipsis at start of line' do
+      input = <<~EOS.chop
+      #{SAMPLE_MANPAGE_HEADER}
+
+      -x::
+	Ao gravar o commit, acrescente uma linha que diz "(cherry picked from commit
+	...)" à mensagem de commit original para indicar qual commit esta mudança
+	foi escolhida. Isso é feito apenas para picaretas de cereja sem conflitos.
+	EOS
+      output = Asciidoctor.convert input, backend: :manpage
+      assert_equal '\&...', output.lines[-3][0..4].chomp
+    end
+
+    test 'should not escape ellipsis in the middle of a line' do
+      input = <<~EOS.chop
+      #{SAMPLE_MANPAGE_HEADER}
+
+      -x::
+	Ao gravar o commit, acrescente uma linha que diz
+	"(cherry picked from commit...)" à mensagem de commit
+	 original para indicar qual commit esta mudança
+	foi escolhida. Isso é feito apenas para picaretas
+	de cereja sem conflitos.
+	EOS
+      output = Asciidoctor.convert input, backend: :manpage
+      assert(output.lines[-5].include? 'commit...')
+    end
+
     test 'should normalize whitespace in a paragraph' do
       input = <<~EOS.chop
       #{SAMPLE_MANPAGE_HEADER}
@@ -242,6 +292,20 @@ context 'Manpage' do
 
       output = Asciidoctor.convert input, backend: :manpage
       assert_includes output, %(Oh, here it goes again\nI should have known,\nshould have known,\nshould have known again)
+    end
+
+    test 'should honor start attribute on ordered list' do
+      input = <<~EOS.chop
+      #{SAMPLE_MANPAGE_HEADER}
+
+      [start=5]
+      . five
+      . six
+      EOS
+
+      output = Asciidoctor.convert input, backend: :manpage
+      assert_match %r/IP " 5\.".*five/m, output
+      assert_match %r/IP " 6\.".*six/m, output
     end
 
     test 'should collapse whitespace in the man manual and man source' do
@@ -280,15 +344,15 @@ context 'Manpage' do
       assert_equal '\(lqhello\(rq \(oqgoodbye\(cq \fBstrong\fP \fIweak\fP \f(CReven\fP', output.lines.last.chomp
     end
 
-    test 'should escape backslashes in content' do
+    test 'should preserve literal backslashes in content' do
       input = <<~EOS.chop
       #{SAMPLE_MANPAGE_HEADER}
 
-      \\.foo \\ bar\\
-      baz
+      \\.foo \\ bar \\\\ baz\\
+      more
       EOS
       output = Asciidoctor.convert input, backend: :manpage
-      assert_equal '\(rs.foo \(rs bar\(rs', output.lines[-2].chomp
+      assert_equal '\(rs.foo \(rs bar \(rs\(rs baz\(rs', output.lines[-2].chomp
     end
 
     test 'should escape literal escape sequence' do
@@ -707,6 +771,35 @@ context 'Manpage' do
     end
   end
 
+  context 'Verse Block' do
+    test 'should preserve hard line breaks in verse block' do
+      input = SAMPLE_MANPAGE_HEADER.lines
+      synopsis_idx = input.find_index {|it| it == %(== SYNOPSIS\n) } + 2
+      input[synopsis_idx..synopsis_idx] = <<~'EOS'.lines
+      [verse]
+      _command_ [_OPTION_]... _FILE_...
+      EOS
+      input = <<~EOS.chop
+      #{input.join}
+
+      description
+      EOS
+      expected_coda = <<~'EOS'.chop
+      .SH "SYNOPSIS"
+      .sp
+      .nf
+      \fIcommand\fP [\fIOPTION\fP]... \fIFILE\fP...
+      .fi
+      .br
+      .SH "DESCRIPTION"
+      .sp
+      description
+      EOS
+      output = Asciidoctor.convert input, backend: :manpage
+      assert output.end_with? expected_coda
+    end
+  end
+
   context 'Callout List' do
     test 'should generate callout list using proper formatting commands' do
       input = <<~EOS.chop
@@ -728,6 +821,170 @@ context 'Manpage' do
       EOS
       output = Asciidoctor.convert input, backend: :manpage
       assert output.end_with? expected_coda
+    end
+  end
+
+  context 'Page breaks' do
+    test 'should insert page break at location of page break macro' do
+      input = <<~EOS.chop
+      #{SAMPLE_MANPAGE_HEADER}
+
+      == Section With Break
+
+      before break
+
+      <<<
+
+      after break
+      EOS
+      expected_coda = <<~'EOS'.chop
+      .SH "SECTION WITH BREAK"
+      .sp
+      before break
+      .bp
+      .sp
+      after break
+      EOS
+      output = Asciidoctor.convert input, backend: :manpage
+      assert output.end_with? expected_coda
+    end
+  end
+
+  context 'Footnotes' do
+    test 'should generate list of footnotes using numbered list with numbers enclosed in brackets' do
+      [true, false].each do |standalone|
+        input = <<~EOS.chop
+        #{SAMPLE_MANPAGE_HEADER}
+
+        text.footnote:[first footnote]
+
+        more text.footnote:[second footnote]
+        EOS
+        expected_coda = <<~'EOS'.chop
+        .sp
+        text.[1]
+        .sp
+        more text.[2]
+        .SH "NOTES"
+        .IP [1]
+        first footnote
+        .IP [2]
+        second footnote
+        EOS
+        if standalone
+          expected_coda = <<~EOS.chop
+          #{expected_coda}
+          .SH "AUTHOR"
+          .sp
+          Author Name
+          EOS
+        end
+        output = Asciidoctor.convert input, backend: :manpage, standalone: standalone
+        assert output.end_with? expected_coda
+      end
+    end
+
+    test 'should number footnotes according to footnote index' do
+      input = <<~EOS.chop
+      #{SAMPLE_MANPAGE_HEADER}
+
+      text.footnote:fn1[first footnote]footnote:[second footnote]
+
+      more text.footnote:fn1[]
+      EOS
+      expected_coda = <<~'EOS'.chop
+      .sp
+      text.[1][2]
+      .sp
+      more text.[1]
+      .SH "NOTES"
+      .IP [1]
+      first footnote
+      .IP [2]
+      second footnote
+      EOS
+      output = Asciidoctor.convert input, backend: :manpage
+      assert output.end_with? expected_coda
+    end
+
+    test 'should format footnote with bare URL' do
+      input = <<~EOS.chop
+      #{SAMPLE_MANPAGE_HEADER}
+
+      text.footnote:[https://example.org]
+      EOS
+      expected_coda = <<~'EOS'.chop
+      .SH "NOTES"
+      .IP [1]
+      .URL "https://example.org" "" ""
+      EOS
+      output = Asciidoctor.convert input, backend: :manpage
+      assert output.end_with? expected_coda
+    end
+
+    test 'should format footnote with text before bare URL' do
+      input = <<~EOS.chop
+      #{SAMPLE_MANPAGE_HEADER}
+
+      text.footnote:[see https://example.org]
+      EOS
+      expected_coda = <<~'EOS'.chop
+      .SH "NOTES"
+      .IP [1]
+      see \c
+      .URL "https://example.org" "" ""
+      EOS
+      output = Asciidoctor.convert input, backend: :manpage
+      assert output.end_with? expected_coda
+    end
+
+    test 'should format footnote with text after bare URL' do
+      input = <<~EOS.chop
+      #{SAMPLE_MANPAGE_HEADER}
+
+      text.footnote:[https://example.org is the place]
+      EOS
+      expected_coda = <<~'EOS'.chop
+      .SH "NOTES"
+      .IP [1]
+      .URL "https://example.org" "" " "
+      is the place
+      EOS
+      output = Asciidoctor.convert input, backend: :manpage
+      assert output.end_with? expected_coda
+    end
+
+    test 'should format footnote with URL macro' do
+      input = <<~EOS.chop
+      #{SAMPLE_MANPAGE_HEADER}
+
+      text.footnote:[go to https://example.org[example site].]
+      EOS
+      expected_coda = <<~'EOS'.chop
+      .SH "NOTES"
+      .IP [1]
+      go to \c
+      .URL "https://example.org" "example site" "."
+      EOS
+      output = Asciidoctor.convert input, backend: :manpage
+      assert output.end_with? expected_coda
+    end
+
+    test 'should produce a warning message and output fallback text at location of macro of unresolved footnote' do
+      input = <<~EOS.chop
+      #{SAMPLE_MANPAGE_HEADER}
+
+      text.footnote:does-not-exist[]
+      EOS
+      expected_coda = <<~'EOS'.chop
+      .sp
+      text.[does\-not\-exist]
+      EOS
+      using_memory_logger do |logger|
+        output = Asciidoctor.convert input, backend: :manpage
+        assert output.end_with? expected_coda
+        assert_message logger, :WARN, 'invalid footnote reference: does-not-exist'
+      end
     end
   end
 

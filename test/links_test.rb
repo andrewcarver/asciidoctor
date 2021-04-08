@@ -168,6 +168,16 @@ context 'Links' do
     assert_match(/l&#8217;<a href=/, output)
   end
 
+  test 'should convert qualified url as macro enclosed in double quotes' do
+    output = convert_string_to_embedded('"https://asciidoctor.org[]"')
+    assert_include '"<a href="https://asciidoctor.org" class="bare">https://asciidoctor.org</a>"', output
+  end
+
+  test 'should convert qualified url as macro enclosed in single quotes' do
+    output = convert_string_to_embedded('\'https://asciidoctor.org[]\'')
+    assert_include '\'<a href="https://asciidoctor.org" class="bare">https://asciidoctor.org</a>\'', output
+  end
+
   test 'qualified url using invalid link macro should not create link' do
     assert_xpath '//a', convert_string('link:http://asciidoc.org is the project page for AsciiDoc.'), 0
   end
@@ -251,6 +261,11 @@ context 'Links' do
   test 'link macro with comma but no explicit attributes in text should not parse text' do
     url = 'https://fonts.googleapis.com/css?family=Roboto:400,400italic,'
     assert_xpath %(//a[@href="#{url}"][text()="Roboto,400"]), convert_string_to_embedded(%(link:#{url}[Roboto,400])), 1
+  end
+
+  test 'link macro should support id and role attributes' do
+    url = 'https://fonts.googleapis.com/css?family=Roboto:400'
+    assert_xpath %(//a[@href="#{url}"][@id="roboto-regular"][@class="bare font"][text()="#{url}"]), convert_string_to_embedded(%(link:#{url}[,id=roboto-regular,role=font])), 1
   end
 
   test 'link text that ends in ^ should set link window to _blank' do
@@ -390,7 +405,7 @@ context 'Links' do
     input = <<~'EOS'
     see <<foo>>
 
-    anchor:foo[b[a\]r]tex'
+    anchor:foo[b[a\]r]tex
     EOS
     result = convert_string_to_embedded input
     assert_includes result, 'see <a href="#foo">b[a]r</a>'
@@ -757,6 +772,24 @@ context 'Links' do
     end
   end
 
+  test 'should not warn if verbose flag is set and reference is found in compat mode' do
+    input = <<~'EOS'
+    [[foobar]]
+    == Foobar
+
+    == Section B
+
+    See <<foobar>>.
+    EOS
+    using_memory_logger do |logger|
+      in_verbose_mode do
+        output = convert_string_to_embedded input, attributes: { 'compat-mode' => '' }
+        assert_xpath '//a[@href="#foobar"][text() = "Foobar"]', output, 1
+        assert_empty logger
+      end
+    end
+  end
+
   test 'should warn and create link if verbose flag is set and reference using # notation is not found' do
     input = <<~'EOS'
     [#foobar]
@@ -922,9 +955,36 @@ context 'Links' do
     == <<s1>>
     EOS
 
-    # NOTE this output is nonsensical, but we still need to verify the scenario
     output = convert_string_to_embedded input
-    assert_xpath '//a[@href="#DNE"][text()="[DNE]"]', output, 2
+    assert_xpath '//h2[@id="s1"]/a[@href="#DNE"][text()="[DNE]"]', output, 1
+    assert_xpath '//h2/a[@href="#s1"][text()="[DNE]"]', output, 1
+  end
+
+  test 'should break circular xref reference in section title' do
+    input = <<~'EOS'
+    [#a]
+    == A <<b>>
+
+    [#b]
+    == B <<a>>
+    EOS
+
+    output = convert_string_to_embedded input
+    assert_includes output, '<h2 id="a">A <a href="#b">B [a]</a></h2>'
+    assert_includes output, '<h2 id="b">B <a href="#a">[a]</a></h2>'
+  end
+
+  test 'should drop nested anchor in xreftext' do
+    input = <<~'EOS'
+    [#a]
+    == See <<b>>
+
+    [#b]
+    == Consult https://google.com[Google]
+    EOS
+
+    output = convert_string_to_embedded input
+    assert_includes output, '<h2 id="a">See <a href="#b">Consult Google</a></h2>'
   end
 
   test 'should not resolve forward xref evaluated during parsing' do

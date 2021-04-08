@@ -5,8 +5,7 @@ class SyntaxHighlighter::PygmentsAdapter < SyntaxHighlighter::Base
 
   def initialize *args
     super
-    @requires_stylesheet = nil
-    @style = nil
+    @requires_stylesheet = @style = nil
   end
 
   def highlight?
@@ -53,7 +52,7 @@ class SyntaxHighlighter::PygmentsAdapter < SyntaxHighlighter::Base
   end
 
   def docinfo? location
-    @requires_stylesheet && location == :footer
+    @requires_stylesheet && location == :head
   end
 
   def docinfo location, doc, opts
@@ -134,10 +133,10 @@ class SyntaxHighlighter::PygmentsAdapter < SyntaxHighlighter::Base
 
   CodeCellStartTagCs = '<td class="code">'
   LinenoColumnStartTagsCs = '<td class="linenos"><div class="linenodiv"><pre>'
-  LinenoSpanTagCs = '<span class="lineno">\1</span>'
+  LinenoSpanTagCs = '<span class="lineno">\1 </span>'
   PreTagCs = '<pre>\1</pre>'
   StyledLinenoColumnStartTagsRx = /<td><div class="linenodiv" style="[^"]+?"><pre style="[^"]+?">/
-  StyledLinenoSpanTagRx = %r(<span style="background-color: #f0f0f0; padding: 0 5px 0 5px">( *\d+ )</span>)
+  StyledLinenoSpanTagRx = %r((?<=^|<span></span>)<span style="[^"]+">( *\d+) ?</span>)
   WRAPPER_CLASS = 'lineno' # doesn't appear in output; Pygments appends "table" to this value to make nested table class
   # NOTE <pre> has style attribute when pygments-css=style
   # NOTE <div> has trailing newline when pygments-linenums-mode=table

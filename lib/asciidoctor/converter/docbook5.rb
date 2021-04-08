@@ -371,9 +371,7 @@ class Converter::DocBook5Converter < Converter::Base
     has_body = false
     result = []
     pgwide_attribute = (node.option? 'pgwide') ? ' pgwide="1"' : ''
-    if (frame = node.attr 'frame', 'all', 'table-frame') == 'ends'
-      frame = 'topbot'
-    end
+    frame = 'topbot' if (frame = node.attr 'frame', 'all', 'table-frame') == 'ends'
     grid = node.attr 'grid', nil, 'table-grid'
     result << %(<#{tag_name = node.title? ? 'table' : 'informaltable'}#{common_attributes node.id, node.role, node.reftext}#{pgwide_attribute} frame="#{frame}" rowsep="#{['none', 'cols'].include?(grid) ? 0 : 1}" colsep="#{['none', 'rows'].include?(grid) ? 0 : 1}"#{(node.attr? 'orientation', 'landscape', 'table-orientation') ? ' orient="land"' : ''}>)
     if (node.option? 'unbreakable')
@@ -485,7 +483,7 @@ class Converter::DocBook5Converter < Converter::Base
     when :link
       %(<link xl:href="#{node.target}">#{node.text}</link>)
     when :bibref
-      %(<anchor#{common_attributes node.id, nil, "[#{node.reftext || node.id}]"}/>#{text})
+      %(<anchor#{common_attributes node.id, nil, (text = "[#{node.reftext || node.id}]")}/>#{text})
     else
       logger.warn %(unknown anchor type: #{node.type.inspect})
       nil
@@ -515,7 +513,7 @@ class Converter::DocBook5Converter < Converter::Base
   def convert_inline_image node
     width_attribute = (node.attr? 'width') ? %( contentwidth="#{node.attr 'width'}") : ''
     depth_attribute = (node.attr? 'height') ? %( contentdepth="#{node.attr 'height'}") : ''
-    %(<inlinemediaobject>
+    %(<inlinemediaobject#{common_attributes nil, node.role}>
 <imageobject>
 <imagedata fileref="#{node.type == 'icon' ? (node.icon_uri node.target) : (node.image_uri node.target)}"#{width_attribute}#{depth_attribute}/>
 </imageobject>

@@ -39,14 +39,15 @@ module Asciidoctor
           # NOTE don't use squiggly heredoc to maintain compatibility with Ruby < 2.3
           opts.banner = <<-'EOS'.gsub '          ', ''
           Usage: asciidoctor [OPTION]... FILE...
-          Translate the AsciiDoc source FILE or FILE(s) into the backend output format (e.g., HTML 5, DocBook 5, etc.)
-          By default, the output is written to a file with the basename of the source file and the appropriate extension.
-          Example: asciidoctor -b html5 source.asciidoc
+          Convert the AsciiDoc input FILE(s) to the backend output format (e.g., HTML 5, DocBook 5, etc.)
+          Unless specified otherwise, the output is written to a file whose name is derived from the input file.
+          Application log messages are printed to STDERR.
+          Example: asciidoctor input.adoc
 
           EOS
 
-          opts.on('-b', '--backend BACKEND', 'set output format backend: [html5, xhtml5, docbook5, manpage] (default: html5)',
-                  'additional backends are supported via extensions (e.g., pdf, latex)') do |backend|
+          opts.on('-b', '--backend BACKEND', 'set backend output format: [html5, xhtml5, docbook5, manpage] (default: html5)',
+                  'additional backends are supported via extended converters (e.g., pdf, epub3)') do |backend|
             self[:attributes]['backend'] = backend
           end
           opts.on('-d', '--doctype DOCTYPE', ['article', 'book', 'manpage', 'inline'],
@@ -76,8 +77,8 @@ module Asciidoctor
           opts.on('-n', '--section-numbers', 'auto-number section titles in the HTML backend; disabled by default') do
             self[:attributes]['sectnums'] = ''
           end
-          opts.on('--eruby ERUBY', ['erb', 'erubis'],
-                  'specify eRuby implementation to use when rendering custom ERB templates: [erb, erubis] (default: erb)') do |eruby|
+          opts.on('--eruby ERUBY', ['erb', 'erubi', 'erubis'],
+                  'specify eRuby implementation to use when rendering custom ERB templates: [erb, erubi, erubis] (default: erb)') do |eruby|
             self[:eruby] = eruby
           end
           opts.on('-a', '--attribute name[=value]', 'a document attribute to set in the form of name, name!, or name=value pair',
@@ -128,7 +129,7 @@ module Asciidoctor
           opts.on('--trace', 'include backtrace information when reporting errors (default: false)') do |trace|
             self[:trace] = true
           end
-          opts.on('-v', '--verbose', 'enable verbose mode (default: false)') do |verbose|
+          opts.on('-v', '--verbose', 'directs application messages logged at DEBUG or INFO level to STDERR (default: false)') do |verbose|
             self[:verbose] = 2
           end
           opts.on('-w', '--warnings', 'turn on script warnings (default: false)') do |warnings|
@@ -205,7 +206,7 @@ module Asciidoctor
         # shave off the file to process so that options errors appear correctly
         if args.size == 1 && args[0] == '-'
           infiles << args.pop
-        elsif
+        else
           args.each do |file|
             if file.start_with? '-'
               # warn, but don't panic; we may have enough to proceed, so we won't force a failure

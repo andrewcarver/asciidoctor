@@ -17,7 +17,7 @@ ifdef::env-github[]
 :warning-caption: :warning:
 endif::[]
 // Variables:
-:release-version: 2.0.10
+:release-version: 2.0.12
 // URIs:
 :uri-org: https://github.com/asciidoctor
 :uri-repo: {uri-org}/asciidoctor
@@ -40,8 +40,8 @@ endif::[]
 :uri-contribute: {uri-rel-file-base}CONTRIBUTING.adoc
 :uri-license: {uri-rel-file-base}LICENSE
 :uri-tests: {uri-rel-tree-base}test
-:uri-discuss: http://discuss.asciidoctor.org
-:uri-irc: irc://irc.freenode.org/#asciidoctor
+:uri-discuss: https://discuss.asciidoctor.org
+:uri-chat: https://asciidoctor.zulipchat.com
 :uri-rubygem: https://rubygems.org/gems/asciidoctor
 :uri-what-is-asciidoc: {uri-docs}/what-is-asciidoc
 :uri-user-manual: {uri-docs}/user-manual
@@ -61,8 +61,8 @@ endif::[]
 
 {uri-project}/[Asciidoctor] 是一个 _快速_ 文本处理器和发布工具链，它可以将 {uri-what-is-asciidoc}[AsciiDoc] 文档转化成 HTML 5、 DocBook 5 以及其他格式。
 Asciidoctor 由 Ruby 编写，打包成 RubyGem，然后发布到 {uri-rubygem}[RubyGems.org] 上。
-这个 gem 还被包含道几个 Linux 发行版中，其中包括 Fedora、Debian 和 Ubuntu。
-Asciidoctor 是开源的，{uri-repo}[代码]托管在 GitHub，遵从 {uri-license}[MIT] 协议。
+这个 gem 还被包含到几个 Linux 发行版中，其中包括 Fedora、Debian 和 Ubuntu。
+Asciidoctor 是开源的，link:{uri-repo}[代码托管在 GitHub]，遵从 {uri-license}[MIT] 协议。
 
 该文档有如下语言的翻译版：
 
@@ -77,6 +77,14 @@ Asciidoctor 是开源的，{uri-repo}[代码]托管在 GitHub，遵从 {uri-lice
 * {uri-docs}/asciidoc-syntax-quick-reference[AsciiDoc 语法快速参考]
 * {uri-docs}/user-manual[Asciidoctor 用户手册]
 
+ifdef::status[]
+image:https://img.shields.io/gem/v/asciidoctor.svg[Latest Release, link={uri-gem}]
+image:https://img.shields.io/badge/rubydoc.info-{release-version}-blue.svg[library (API) docs,link=https://www.rubydoc.info/gems/asciidoctor/{release-version}]
+image:https://github.com/asciidoctor/asciidoctor/workflows/CI/badge.svg[Build Status (GitHub Actions),link={uri-repo}/actions]
+image:https://inch-ci.org/github/asciidoctor/asciidoctor.svg?branch=master[Inline docs,link=https://inch-ci.org/github/asciidoctor/asciidoctor]
+image:https://img.shields.io/badge/zulip-join_chat-brightgreen.svg[project chat,link=https://asciidoctor.zulipchat.com/]
+endif::[]
+
 .Ruby 所至， Asciidoctor 相随
 ****
 使用 JRuby 让 Asciidoctor 运行在 Java 虚拟机上。
@@ -87,15 +95,6 @@ Asciidoctor 也可以运行在 JavaScript 上。
 我们可以使用 https://opalrb.com[Opal] 将 Ruby 源码编译成 JavaScript 生成 {uri-asciidoctorjs}[Asciidoctor.js] 文件，这是一个全功能版的 Asciidoctor，可以运行在任意的 JavaScript 环境中，比如 Web 浏览器 或 Node.js。
 Asciidoctor.js 被用于预览 AsciiDoc，支持 Chrome 扩展，Atom，Brackets 或其他基于 Web 的工具。
 ****
-
-ifdef::status[]
-.*Project health*
-image:https://img.shields.io/travis/asciidoctor/asciidoctor/master.svg[Build Status (Travis CI), link=https://travis-ci.org/asciidoctor/asciidoctor]
-image:https://ci.appveyor.com/api/projects/status/ifplu67oxvgn6ceq/branch/master?svg=true&amp;passingText=green%20bar&amp;failingText=%23fail&amp;pendingText=building%2E%2E%2E[Build Status (AppVeyor), link=https://ci.appveyor.com/project/asciidoctor/asciidoctor]
-//image:https://img.shields.io/coveralls/asciidoctor/asciidoctor/master.svg[Coverage Status, link=https://coveralls.io/r/asciidoctor/asciidoctor]
-//image:https://codeclimate.com/github/asciidoctor/asciidoctor/badges/gpa.svg[Code Climate, link="https://codeclimate.com/github/asciidoctor/asciidoctor"]
-image:https://inch-ci.org/github/asciidoctor/asciidoctor.svg?branch=master[Inline docs, link="https://inch-ci.org/github/asciidoctor/asciidoctor"]
-endif::[]
 
 [#the-big-picture]
 == 整体概况
@@ -325,7 +324,7 @@ WARNING: 当你通过 API 使用 Asciidoctor 时，默认的安全模式是 `:se
 在 secure 模式下，很多核心特性将不可用，包括 `include` 特性。
 如果你想启用这些特性，你需要明确设置安全模式为 `:server` （推荐）或 `:safe`。
 
-你也可以将 AsciiDoc 字符串转化我内嵌的 HTML （为了插入到一个 HTML 页面），用法如下：
+你也可以将 AsciiDoc 字符串转化为可内嵌的 HTML （为了插入到一个 HTML 页面），用法如下：
 
 [source]
 ----
@@ -392,9 +391,9 @@ Asciidoctor 支持自定义转化器，它可以操作从待处理文件到生�
 但是，如果没有反馈，我们将寸步难行。
 我们鼓励你在讨论组、Twitter或聊天室里，提问为题，讨论项目的方方面面，
 
+聊天 (Zulip):: {uri-chat}
 讨论组 (Nabble):: {uri-discuss}
 Twitter:: https://twitter.com/search?f=tweets&q=%23asciidoctor[#asciidoctor] 来加入话题 或 https://twitter.com/asciidoctor[@asciidoctor] at并提醒我们
-聊天 (Gitter):: image:https://badges.gitter.im/Join%20In.svg[Gitter, link=https://gitter.im/asciidoctor/asciidoctor]
 
 ifdef::env-github[]
 Further information and documentation about Asciidoctor can be found on the project's website.
@@ -411,7 +410,7 @@ Asciidoctor 组织在 GitHub 托管代码、议案跟踪和相关子项目。
 [#copyright-and-licensing]
 == 版权和协议
 
-Copyright (C) 2012-2019 Dan Allen, Sarah White, Ryan Waldron, and the individual contributors to Asciidoctor.
+Copyright (C) 2012-2021 Dan Allen, Sarah White, Ryan Waldron, and the individual contributors to Asciidoctor.
 这个软件的免费使用是在MIT许可条款授予的。
 
 请看 {uri-license}[版权声明] 文件来获取更多详细信息。

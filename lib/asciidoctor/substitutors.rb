@@ -542,14 +542,17 @@ module Substitutors
         end
 
         prefix, suffix = $1, ''
-        # NOTE if $4 is set, then we're looking at a formal macro
+        # NOTE if $4 is set, we're looking at a formal macro (e.g., https://example.org[])
         if $4
           prefix = '' if prefix == 'link:'
           text = $4
         else
-          # invalid macro syntax (link: prefix w/o trailing square brackets)
-          # FIXME we probably shouldn't even get here...our regex is doing too much
-          next $& if prefix == 'link:'
+          # invalid macro syntax (link: prefix w/o trailing square brackets or enclosed in double quotes)
+          # FIXME we probably shouldn't even get here when the link: prefix is present; the regex is doing too much
+          case prefix
+          when 'link:', ?", ?'
+            next $&
+          end
           text = ''
           case $3
           when ')'
@@ -807,7 +810,7 @@ module Substitutors
         # handles: id (in compat mode or when natural xrefs are disabled)
         elsif doc.compat_mode || !Compliance.natural_xrefs
           refid, target = fragment, %(##{fragment})
-          logger.info %(possible invalid reference: #{refid}) if logger.info? && doc.catalog[:refs][refid]
+          logger.info %(possible invalid reference: #{refid}) if logger.info? && !doc.catalog[:refs][refid]
         # handles: id
         elsif doc.catalog[:refs][fragment]
           refid, target = fragment, %(##{fragment})
@@ -846,19 +849,17 @@ module Substitutors
         end
 
         if id
-          if text
+          if (footnote = doc.footnotes.find {|candidate| candidate.id == id })
+            index, text = footnote.index, footnote.text
+            type, target, id = :xref, id, nil
+          elsif text
             text = restore_passthroughs(normalize_text text, true, true)
             index = doc.counter('footnote-number')
             doc.register(:footnotes, Document::Footnote.new(index, id, text))
             type, target = :ref, nil
           else
-            if (footnote = doc.footnotes.find {|candidate| candidate.id == id })
-              index, text = footnote.index, footnote.text
-            else
-              logger.warn %(invalid footnote reference: #{id})
-              index, text = nil, id
-            end
-            type, target, id = :xref, id, nil
+            logger.warn %(invalid footnote reference: #{id})
+            type, target, text, id = :xref, id, id, nil
           end
         elsif text
           text = restore_passthroughs(normalize_text text, true, true)
@@ -948,7 +949,7 @@ module Substitutors
     if (linenums_mode = (attr? 'linenums') ? (doc_attrs[%(#{syntax_hl_name}-linenums-mode)] || :table).to_sym : nil)
       start_line_number = 1 if (start_line_number = (attr 'start', 1).to_i) < 1
     end
-    highlight_lines = resolve_lines_to_highlight source, (attr 'highlight') if attr? 'highlight'
+    highlight_lines = resolve_lines_to_highlight source, (attr 'highlight'), start_line_number if attr? 'highlight'
 
     highlighted, source_offset = syntax_hl.highlight self, source, (attr 'language'),
       callouts: callout_marks,
@@ -971,9 +972,10 @@ module Substitutors
   #
   # source - The String source.
   # spec   - The lines specifier (e.g., "1-5, !2, 10" or "1..5;!2;10")
+  # start  - The line number of the first line (optional, default: false)
   #
   # Returns an [Array] of unique, sorted line numbers.
-  def resolve_lines_to_highlight source, spec
+  def resolve_lines_to_highlight source, spec, start = nil
     lines = []
     spec = spec.delete ' ' if spec.include? ' '
     ((spec.include? ',') ? (spec.split ',') : (spec.split ';')).map do |entry|
@@ -984,21 +986,22 @@ module Substitutors
       if (delim = (entry.include? '..') ? '..' : ((entry.include? '-') ? '-' : nil))
         from, delim, to = entry.partition delim
         to = (source.count LF) + 1 if to.empty? || (to = to.to_i) < 0
-        line_nums = (from.to_i..to).to_a
         if negate
-          lines -= line_nums
+          lines -= (from.to_i..to).to_a
         else
-          lines.concat line_nums
+          lines |= (from.to_i..to).to_a
         end
-      else
-        if negate
-          lines.delete entry.to_i
-        else
-          lines << entry.to_i
-        end
+      elsif negate
+        lines.delete entry.to_i
+      elsif !lines.include?(line = entry.to_i)
+        lines << line
       end
     end
-    lines.sort.uniq
+    # If the start attribute is defined, then the lines to highlight specified by the provided spec should be relative to the start value.
+    unless (shift = start ? start - 1 : 0) == 0
+      lines = lines.map {|it| it - shift }
+    end
+    lines.sort
   end
 
   # Public: Extract the passthrough text from the document for reinsertion after processing.
